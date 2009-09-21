@@ -1,0 +1,158 @@
+--------
+1. Getting GCC with plug-in support
+---
+
+In order to use plug-ins, you will need a bleeding-edge development
+build of GCC from source control.  GCC releases will not contains
+plug-in support until 4.5.
+
+There are two plug-in-related branches in SVN (/plugin and /plugins),
+but both are closed and neither is out up-to-date enough for the
+plug-ins in this distribution.
+
+These plug-ins are tested with the 4.5-20090910 snapshot (SVN revision
+151619).
+
+You can find instructions for pulling from GCC's Subversion repository
+here:
+http://gcc.gnu.org/svn.html
+
+--------
+2. Setting up GCC
+---
+
+You will probably need to build and install GCC from source in order
+to build plug-ins. These plug-ins do not require any GCC build
+artifacts to build, but plug-ins from other sources may, so it is
+useful to keep your build directory around.  When working with these
+plug-ins, it is our convention to set up the following directory
+structure:
+
+$PLUGIN_BASE/gcc-svn          # The GCC sources themselves
+$PLUGIN_BASE/build-svn        # A separate directory for building GCC
+$PLUGIN_BASE/install-svn      # A directory for the installed GCC binaries
+
+Note that for cleanliness, we keep a separate directory for building
+GCC instead of building directly in the GCC source directory.
+
+With this structure in mind, the steps for building GCC are:
+
+# Perform the build from the seperate build directory
+cd $PLUGIN_BASE/build-svn
+
+# Note that the --enable-languages flag is entirely optional.  Omit
+# the flag to compile all languages, or specify only the languages you
+# want for a faster build.
+# Also optional is the CFLAGS specification.  If you intend to develop
+# plug-ins, you may find it useful to build GCC with debugging turned
+# on.  Otherwise, omit these CFLAGS for a significantly faster
+# compiler.
+../gcc-svn/configure --prefix=$PLUGIN_BASE/install-svn           \
+  		     --enable-languages=c,c++ CFLAGS='-g -O0'
+
+# This process will take several hours on some machines.
+make
+make install
+
+---
+(2b. GCC dependencies)
+-
+
+Bleeding-edge GCC builds require new versions of libgmp and libmpfr.
+Some distributions (including the distribution these plug-ins were
+developed on) do not have packages for these dependencies.
+
+The GCC build process includes a convenient way to deal with these
+dependencies.  If you have a problem with either libgmp or libmpfr,
+download the most recent source tarballs for both packages and untar
+them directly into the GCC source directory ($PLUGIN_BASE/gcc-svn/).
+
+Rename the two directories to libgmp and libmpfr (removing the version
+numbers from their directory names), and the GCC build process will
+automatically roll these packages into your compilation.  You do not
+need to specify any extra options!
+
+--------
+3. Building the HCOS plug-ins
+---
+
+Our plug-ins also use Autoconf and Automake, so the build process is
+similar.  You can build them directly from the main project directory
+or from a separate build directory (as we did with GCC).
+
+Note that there are two GCCs involved in the plug-in build process:
+the GCC that will compile the plug-in source (the host compiler) and
+the GCC that will use the plug-ins (the target compiler).  Only the
+target compiler needs to be plug-in-capable; even older versions of
+GCC will work fine as the host compiler.
+
+If your host and target compilers are the same, you just need to
+specify which compiler you are using.  The configure script can get
+all the information it needs from the compiler.
+
+# Configure for host compiler = target compiler.
+./configure CC=$PLUGIN_BASE/install-svn/bin/gcc
+
+For configurations with a separate host and target compiler, you are
+responsible for pointing the configure script to the location of the
+_target_ compiler's plug-in header files.
+
+# Alternatively: configure for host compiler = system default and
+# target compiler = plug-in-capable GCC.
+./configure --with-gcc-includes=`$PLUGIN_BASE/bin/gcc -print-file-name=plugin`/include
+
+It is probably possible (but untested) to cross compile plug-ins using
+the second kind of configuration.  The host compiler (specified with
+CC=) must be a cross compiler targeting the target compiler's host
+architecture.
+
+Once you've configured using one of the above options, compile
+normally:
+
+# Make install is optional here.  You have the option of using the
+# plug-ins directly out of the project directory
+make
+make install # (Optional)
+
+--------
+4. Using the HCOS plug-ins
+---
+
+Each plug-in has it's own directory, and the compiled plug-in goes in
+the .libs sub-directory.  For example, after compiling, you will find
+Verbose Dump in
+
+verbose-dump/.libs/libverbose_dump.so
+
+GCC with plug-in support has an -fplugin option.  You can specify this
+option for each plug-in you want to apply.
+
+# Note that if you have not installed the plug-ins, you will need to
+# specify the full path to libverbose-dump.so
+$PLUGIN_BASE/install-svn/bin/gcc -fplugin=libverbose_dump.so file.c
+
+By default, Verbose Dump will output everything to standard out.  You
+can use the standard Unix redirect, or you can specify the file you
+want by passing an option directly to Verbose Dump.
+
+$PLUGIN_BASE/install-svn/bin/gcc -fplugin=libverbose_dump.so     \
+				 -fplugin-arg-libverbose_dump-file=dump.out   \
+				 file.c
+
+Specify -fplugin once for each plugin you wish to invoke, and specify
+-fplugin-arg-NAME-ARG for _each_ argument you wish to pass to a
+plug-in.
+
+--------
+5. Running test cases
+---
+
+Some of the HCOS plug-ins includes test cases.  You can run them with
+make check.
+
+If you configured the plug-ins package to compile with separate host
+and target compilers, you should specify your _target_ compiler to
+make when running the tests.  The tests run the plug-ins, and you want
+to test them with the compiler they were built for!
+
+make check CC=$PLUGIN_BASE/install-svn/bin/gcc

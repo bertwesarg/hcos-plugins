@@ -1,0 +1,43 @@
+HCOS GCC Plug-ins
+
+The plug-ins in this package were produced as part of research done by
+the HCOS group.  Some of them are directly useful, while some serve as
+useful examples for plug-in development.
+
+These plug-ins are distributed under the terms of the GPL version 3,
+which is included in the file COPYING.
+
+What is HCOS?
+
+The High-Confidence Operating Systems project is a research group at
+Stony Brook University's computer science deparment.  Our research
+focuses on self-monitoring software, so we are especially interested
+in compiler-assisted instrumentation.
+
+The HCOS web site is at:
+http://www.fsl.cs.sunysb.edu/hcos
+
+What does this package include?
+
+--- INSTALL ---
+
+The INSTALL file explains how to build and use these plug-ins.
+
+--- Verbose Dump ---
+
+The verbose dumper is a diagnostic tool for GCC and GCC plug-in
+developers.  Verbose Dump does not transform any code; it outputs
+internal compiler information during compilation, including:
+
+For each file:
+1. Call graph: The graph of calls between functions within the file.
+
+For each function:
+2. c-trees: GCC's internal abstract syntax tree (AST).
+
+3. CFG: The control-flow graph for basic blocks in the function.
+
+For each basic block:
+4. GIMPLE: GCC's internal programming langauge- and
+architecture-independent intermediate representation.  GIMPLE is a
+three-address code.

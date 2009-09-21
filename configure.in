@@ -1,0 +1,72 @@
+#                                               -*- Autoconf -*-
+# Process this file with autoconf to produce a configure script.
+
+AC_PREREQ(2.59)
+AC_INIT(HCOS Plugins, 0.9.0)
+AC_CONFIG_SRCDIR([verbose-dump/verbose-dump.c])
+# Note that we do not generate a config.h because GCC already uses a
+# config.h that plugins must include.
+#AC_CONFIG_HEADER([config.h])
+AC_CONFIG_AUX_DIR(config)
+
+AM_INIT_AUTOMAKE
+
+# Checks for programs.
+AC_PROG_CC
+AC_PROG_LIBTOOL
+
+# Checks for libraries.
+
+# Checks for header files.
+AC_HEADER_STDC
+AC_CHECK_HEADERS([inttypes.h])
+# These header files are included unconditionally by GCC's system.h
+AC_CHECK_HEADERS(stdarg.h stdio.h sys/types.h errno.h)
+
+# Checks for typedefs, structures, and compiler characteristics.
+
+# Checks for library functions.
+AC_CHECK_FUNCS(fprintf)
+
+# Get the plugin includes directory.
+AC_ARG_WITH(
+  [gcc_includes],
+  AC_HELP_STRING([--with-gcc-includes], [Full path to directory with gcc plug-in header files. By default configure will ask GCC for this directory.]),
+  [gcc_includes=$withval],
+  [gcc_includes=`"$CC" -print-file-name=plugin`/include])
+
+# Don't let the user specify --with-gcc-includes=no or --without-gcc-includes.
+# That's bogus.
+AS_IF(
+  [test "x$gcc_includes" == xno],
+  AC_MSG_FAILURE([Plug-ins cannot compile without a plug-in includes directory.]))
+
+# If you ask a pre-plug-in GCC for the plug-in includes directory, it
+# just returns "plugin"
+AS_IF(
+  [test "x$gcc_includes" == xplugin],
+  AC_MSG_FAILURE([Bad plugin directory.  It looks like you are not using a plug-in-capable GCC.]))
+
+# Make sure the path looks like an absolute path.
+case "$gcc_includes" in
+    /*) ;;
+    ~*) ;;
+    *)
+	gcc_includes==`pwd`/$gcc_includes
+	;;
+esac
+
+# Final check.  Did we actually find a directory with plug-in header files?
+AS_IF(
+  [test "x$gcc_includes" == x -o ! -f "$gcc_includes/tree.def"],
+  AC_MSG_FAILURE([Cannot find plug-in headers in $gcc_includes]))
+
+AC_MSG_NOTICE([Using GCC headers at $gcc_includes])
+AC_SUBST([gcc_includes], [$gcc_includes])
+
+AC_CONFIG_FILES([Makefile
+                 verbose-dump/Makefile
+                 lock-trace/Makefile
+                 lock-trace/test/Makefile])
+
+AC_OUTPUT
