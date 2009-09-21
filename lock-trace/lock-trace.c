@@ -18,7 +18,7 @@
    which logging functions to call for each of those locks.  Take a
    look at the test/ directory for an example configuration. */
 
-// For fgets_unlocked
+/* For fgets_unlocked */
 #define _GNU_SOURCE
 
 #include <inttypes.h>
@@ -56,8 +56,6 @@
 #include "gimple.h"
 #include "c-common.h"
 
-#include "plugin-ggc.h"
-
 /* GCC only allows plug-ins that include this symbol. */
 int plugin_is_GPL_compatible;
 
@@ -78,7 +76,8 @@ static int verbose = true;
 /* Default config file */
 const char *config_file_name = "lock-trace.config";
 
-static GC_ROOT_TREE(lock_hook_type);
+/* A type node for lock hook functions. */
+tree lock_hook_type = NULL;
 
 enum locking_semantics {
   LS_NOT_LOCK,
@@ -96,7 +95,7 @@ typedef struct lock_func_desc {
   const char *name;
   enum locking_semantics semantics;
 
-  tree hook_decl;
+  const char *hook_func_name;
 } lock_func_desc;
 
 DEF_VEC_O(lock_func_desc);
@@ -112,12 +111,26 @@ DEF_VEC_ALLOC_P(char_ptr, heap);
 static VEC(char_ptr, heap) *lock_owner_vec;
 static VEC(char_ptr, heap) *global_lock_vec;
 
-/* This is something of an unfortunate hack.  Every hook function goes
- * in this registered VEC lest the garbage collector reap its soul
- * while it yet has a purpose on this Earth. */
-static GC_ROOT_TREE_VEC(hook_func_vec);
+/* Set up the lock_hook_type. */
+static tree get_lock_hook_type()
+{
+  if (lock_hook_type == NULL)
+    {
+      lock_hook_type = build_function_type_list(void_type_node,
+						build_pointer_type(char_type_node),
+						build_pointer_type(char_type_node),
+						integer_type_node,
+						build_pointer_type(char_type_node),
+						build_pointer_type(char_type_node),
+						build_pointer_type(char_type_node), /* File name */
+						integer_type_node,                  /* Line num */
+						NULL_TREE);
+    }
 
-static tree build_string_ptr(const char* string)
+  return lock_hook_type;
+}
+
+static tree build_string_ptr(const char *string)
 {
   size_t	string_len;
   tree		string_tree;
@@ -308,6 +321,7 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
 
   tree func;
   tree lock;
+  tree hook_decl;
   tree lock_owner;
   tree owner_name;
   tree lock_name;
@@ -408,6 +422,7 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
     }
 
   /* Add a hook. */
+  hook_decl = build_fn_decl(lock_func->hook_func_name, get_lock_hook_type());
   if (lock_owner != NULL)
     owner_addr = build1(ADDR_EXPR, build_pointer_type(char_type_node), stabilize_reference(lock_owner));
   else
@@ -416,7 +431,7 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
   func_name_tree = build_string_ptr(gimple_filename(stmt));
   line_num_tree = build_int_cst(integer_type_node, gimple_lineno(stmt));
 
-  hook_call = gimple_build_call(lock_func->hook_decl, 7,
+  hook_call = gimple_build_call(hook_decl, 7,
 				owner_addr,
 				lock_addr,
 				lock_success,
@@ -459,28 +474,6 @@ static void insert_locking_hooks()
 	  instrument_function_call(&gsi);
       }
   }
-}
-
-/* Plug-in initialization that occurs just before the first
-   transformation pass.  We can't do this initialization in plugin_int
-   because type nodes (such as void_type_node) are not yet
-   available. */
-static void init()
-{
-  lock_hook_type = build_function_type_list(void_type_node,
-					    build_pointer_type(char_type_node),
-					    build_pointer_type(char_type_node),
-					    integer_type_node,
-					    build_pointer_type(char_type_node),
-					    build_pointer_type(char_type_node),
-					    build_pointer_type(char_type_node), /* File name */
-					    integer_type_node,                  /* Line number */
-					    NULL_TREE);
-
-  lock_func_vec = VEC_alloc(lock_func_desc, heap, 10);
-  lock_owner_vec = VEC_alloc(char_ptr, heap, 10);
-  global_lock_vec = VEC_alloc(char_ptr, heap, 10);
-  hook_func_vec = VEC_alloc(tree, gc, 10);
 }
 
 /* Lock function descriptions are specified in the plugin arguments
@@ -551,12 +544,8 @@ static void parse_lock_func_desc(const char *desc_string)
       error("(Lock Trace) Invalid lock semantics: %s.  Specify acquire, try, or release.", fields[1]);
       return;
     }
-  desc.hook_decl = build_fn_decl(fields[2], lock_hook_type);
+  desc.hook_func_name = xstrdup(fields[2]);
   VEC_safe_push(lock_func_desc, heap, lock_func_vec, &desc);
-
-  /* Make sure the hook_func gets put somewhere it will be safe from
-     the garbage collector. */
-  VEC_safe_push(tree, gc, hook_func_vec, desc.hook_decl);
 
   if (verbose)
     {
@@ -629,7 +618,7 @@ static void read_config_file(const char *filename)
       handle_config_pair(key_start, val_start);
     }
 
-  // Did we exit because of EOF or because of an I/O error?
+  /* Did we exit because of EOF or because of an I/O error? */
   if (!feof(file))
     goto out_file_err;
 
@@ -656,14 +645,16 @@ static unsigned int transform_gimple()
   /* Do initialization the first time transform_gimple gets called. */
   if (!init_completed)
     {
-      init();
       read_config_file(config_file_name);
       init_completed = true;
     }
 
-  function_name = IDENTIFIER_POINTER(DECL_NAME(current_function_decl));
+  /* Since the last time we initialized lock_hook_type, the garbage
+     collector may have destroyed it.  Set it to NULL and whoever
+     needs it will initialize it on demand. */
+  lock_hook_type = NULL;
 
-  fprintf(stderr, "func: %s\n", function_name);
+  function_name = IDENTIFIER_POINTER(DECL_NAME(current_function_decl));
 
   if (lookup_attribute(NOINSTRUMENT_ATTR, DECL_ATTRIBUTES(cfun->decl)) != NULL)
     {
@@ -754,6 +745,10 @@ int plugin_init(struct plugin_name_args *plugin_info, struct plugin_gcc_version 
   struct plugin_argument *argv = plugin_info->argv;
   int i;
 
+  lock_func_vec = VEC_alloc(lock_func_desc, heap, 10);
+  lock_owner_vec = VEC_alloc(char_ptr, heap, 10);
+  global_lock_vec = VEC_alloc(char_ptr, heap, 10);
+
 #ifdef DEBUG
   fprintf(stderr, "Initializing Lock Trace plugin.\n");
 #endif
@@ -762,11 +757,6 @@ int plugin_init(struct plugin_name_args *plugin_info, struct plugin_gcc_version 
   fprintf(stderr, "cc109 has PID %d.  Attach debugger now.\n", getpid());
   fprintf(stderr, "[Enter to continue.]\n");
   scanf("%*c");
-#endif
-
-#if 0
-  register_root(hook_func_vec);
-  register_root(lock_hook_type);
 #endif
 
   /* Parse plugin arguments. */
@@ -790,8 +780,6 @@ int plugin_init(struct plugin_name_args *plugin_info, struct plugin_gcc_version 
 		  argv[i].key);
 	}
     }
-
-  read_config_file(config_file_name);
 
   /* Set up a callback to register our attributes. */
   register_callback(plugin_name, PLUGIN_ATTRIBUTES, register_plugin_attributes, NULL);
