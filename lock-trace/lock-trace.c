@@ -92,10 +92,10 @@ enum locking_semantics {
    LS_RELEASE functions) or after (for LS_ACQUIRE and LS_TRY
    functions) instances of this function found in the source. */
 typedef struct lock_func_desc {
-  const char *name;
+  char *name;
   enum locking_semantics semantics;
 
-  const char *hook_func_name;
+  char *hook_func_name;
 } lock_func_desc;
 
 DEF_VEC_O(lock_func_desc);
@@ -105,7 +105,7 @@ static VEC(lock_func_desc, heap) *lock_func_vec;
 /* We only want to instrument locking functions when the operate on
    locks belonging to certain structs.  This list is the list of lock
    owners whose lacks we wish to track. */
-typedef const char *char_ptr;
+typedef char *char_ptr;
 DEF_VEC_P(char_ptr);
 DEF_VEC_ALLOC_P(char_ptr, heap);
 static VEC(char_ptr, heap) *lock_owner_vec;
@@ -197,7 +197,6 @@ static tree get_record(tree node)
 static tree get_record_name_ptr(tree node)
 {
   tree record;
-  tree field;
 
   gcc_assert(TREE_CODE(node) == COMPONENT_REF);
 
@@ -279,7 +278,7 @@ static int is_matching_lock_owner(tree owner)
 {
   int i;
   const char *owner_name;
-  const char *type_name_iter;
+  char *type_name_iter;
 
   owner_name = get_node_name(owner);
 
@@ -297,7 +296,7 @@ static int is_matching_lock_owner(tree owner)
 static int is_matching_lock_name(const char *name)
 {
   int i;
-  const char *lock_name_iter;
+  char *lock_name_iter;
 
   for (i = 0 ; VEC_iterate(char_ptr, global_lock_vec, i, lock_name_iter) ; i++)
     {
@@ -679,8 +678,6 @@ static unsigned int transform_gimple()
    it hasn't been registered by another plug-in. */
 void register_attribute_once(const struct attribute_spec *attr)
 {
-  tree name;
-
   if (lookup_attribute_spec(get_identifier(attr->name)) == NULL)
     {
       /* Safe to register this attribute. */
@@ -730,7 +727,7 @@ static void cleanup(void *event_date, void *data)
 {
   int i;
   struct lock_func_desc *lock_func_iter;
-  const char *name_iter;
+  char *name_iter;
 
   /* Clear out lock_func_vec list. */
   for (i = 0 ; VEC_iterate(lock_func_desc, lock_func_vec, i, lock_func_iter) ; i++)
