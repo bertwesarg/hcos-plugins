@@ -163,6 +163,23 @@ static tree build_string_ptr(const char *string)
   return ret;
 }
 
+/* Given a type node, get that type node's identifier. */
+static tree get_type_identifier(tree type)
+{
+  tree type_name;
+
+  /* NB: On rare occasion, TYPE_NAME() mysteriously gives us a
+     TYPE_DECL instead of the IDENTIFIER_NODE we really wanted for
+     Christmas.  Documentation in tree.h promises that you can use
+     DECL_ORIGINAL_TYPE to get through to the _actual_ type, which has
+     the real IDENTIFIER_NODE.*/
+  type_name = TYPE_NAME(type);
+  while (type_name != NULL && TREE_CODE(type_name) == TYPE_DECL)
+    type_name = TYPE_NAME(DECL_ORIGINAL_TYPE(type_name));
+  gcc_assert(type_name == NULL || TREE_CODE(type_name) == IDENTIFIER_NODE);
+  return type_name;
+}
+
 /* Given a component ref, get the node for the left side of the ref.
    For example, in the case of a->b, get the node for a.  In almost
    all cases, that just means the left operand.  However, there is a
@@ -193,15 +210,17 @@ static tree get_record(tree node)
 
 /* Given a GIMPLE COMPONENT_REF, find the name of the struct being
    accessed.
-   The result is a string pointer obtained with ptr_from_string(). */
+   The result is a string pointer obtained with build_string_ptr(). */
 static tree get_record_name_ptr(tree node)
 {
   tree record;
+  tree type_name;
 
   gcc_assert(TREE_CODE(node) == COMPONENT_REF);
 
   record = get_record(node);
-  return build_string_ptr(IDENTIFIER_POINTER(TYPE_NAME(TREE_TYPE(record))));
+  type_name = get_type_identifier(TREE_TYPE(record));
+  return build_string_ptr(IDENTIFIER_POINTER(type_name));
 }
 
 /* Given a GIMPLE COMPONENT_REF, find the name of the struct field
@@ -221,19 +240,14 @@ static tree get_field_name_ptr(tree node)
    The result is a const char pointer. */
 static const char *get_node_name(tree node)
 {
-  if (TYPE_NAME(TREE_TYPE(node)) == NULL)
+  tree type_name = get_type_identifier(TREE_TYPE(node));
+  if (type_name == NULL)
     {
       fprintf(stderr, "Anonymous type.\n");
       return "__anon";
     }
 
-  if (TREE_CODE(TYPE_NAME(TREE_TYPE(node))) != IDENTIFIER_NODE)
-    {
-      fprintf(stderr, "Unknown record name.\n");
-      return "__unknown_type";
-    }
-
-  return IDENTIFIER_POINTER(TYPE_NAME(TREE_TYPE(node)));
+  return IDENTIFIER_POINTER(type_name);
 }
 
 /* If there is a lock/unlock function with the given name, return its
