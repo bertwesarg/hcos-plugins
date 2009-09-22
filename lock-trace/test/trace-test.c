@@ -123,15 +123,19 @@ int main()
 
   if (num_lock_hooks < expected_lock_hooks) {
     fprintf(stderr, "FAIL: Too few lock hook invocations.\n");
+    return 1;
   }
   else if (num_unlock_hooks < expected_unlock_hooks) {
     fprintf(stderr, "FAIL: Too few unlock hook invocations.\n");
+    return 1;
   }
   else if (num_lock_hooks > expected_lock_hooks) {
     fprintf(stderr, "FAIL: Too many lock hook invocations.\n");
+    return 1;
   }
   else if (num_unlock_hooks > expected_unlock_hooks) {
     fprintf(stderr, "FAIL: Too many unlock hook invocations.\n");
+    return 1;
   }
 
   return 0;
