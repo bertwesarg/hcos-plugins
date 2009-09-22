@@ -208,19 +208,33 @@ static tree get_record(tree node)
   return record;
 }
 
+/* Given a GIMPLE decl node, get its name.
+   The result is a const char pointer. */
+static const char *get_node_name(tree node)
+{
+  tree type_name = get_type_identifier(TREE_TYPE(node));
+  if (type_name == NULL)
+    {
+      fprintf(stderr, "Anonymous type.\n");
+      return "__anon";
+    }
+
+  return IDENTIFIER_POINTER(type_name);
+}
+
 /* Given a GIMPLE COMPONENT_REF, find the name of the struct being
    accessed.
    The result is a string pointer obtained with build_string_ptr(). */
 static tree get_record_name_ptr(tree node)
 {
   tree record;
-  tree type_name;
+  const char *record_name;
 
   gcc_assert(TREE_CODE(node) == COMPONENT_REF);
 
   record = get_record(node);
-  type_name = get_type_identifier(TREE_TYPE(record));
-  return build_string_ptr(IDENTIFIER_POINTER(type_name));
+  record_name = get_node_name(record);
+  return build_string_ptr(record_name);
 }
 
 /* Given a GIMPLE COMPONENT_REF, find the name of the struct field
@@ -234,20 +248,6 @@ static tree get_field_name_ptr(tree node)
 
   field = TREE_OPERAND(node, 1);
   return build_string_ptr(IDENTIFIER_POINTER(DECL_NAME(field)));
-}
-
-/* Given a GIMPLE decl node, get its name.
-   The result is a const char pointer. */
-static const char *get_node_name(tree node)
-{
-  tree type_name = get_type_identifier(TREE_TYPE(node));
-  if (type_name == NULL)
-    {
-      fprintf(stderr, "Anonymous type.\n");
-      return "__anon";
-    }
-
-  return IDENTIFIER_POINTER(type_name);
 }
 
 /* If there is a lock/unlock function with the given name, return its
