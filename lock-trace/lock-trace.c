@@ -715,6 +715,39 @@ static void register_plugin_attributes(void *event_data, void *data)
   register_attribute_once(&noinstr_attr);
 }
 
+static void destroy_lock_func_desc(struct lock_func_desc *lock_func)
+{
+  free(lock_func->name);
+  lock_func->name = NULL;
+
+  free(lock_func->hook_func_name);
+  lock_func->hook_func_name = NULL;
+}
+
+/* This is the last plug-in function called before GCC exits.  Cleanup
+   all the memory we allocated. */
+static void cleanup(void *event_date, void *data)
+{
+  int i;
+  struct lock_func_desc *lock_func_iter;
+  const char *name_iter;
+
+  /* Clear out lock_func_vec list. */
+  for (i = 0 ; VEC_iterate(lock_func_desc, lock_func_vec, i, lock_func_iter) ; i++)
+    destroy_lock_func_desc(lock_func_iter);
+  VEC_free(lock_func_desc, heap, lock_func_vec);
+
+  /* Clear out the lock_owner_vec list. */
+  for (i = 0 ; VEC_iterate(char_ptr, lock_owner_vec, i, name_iter) ; i++)
+    free(name_iter);
+  VEC_free(char_ptr, heap, lock_owner_vec);
+
+  /* Clear out the global_lock_vec list. */
+  for (i = 0 ; VEC_iterate(char_ptr, global_lock_vec, i, name_iter) ; i++)
+    free(name_iter);
+  VEC_free(char_ptr, heap, global_lock_vec);
+}
+
 static struct opt_pass pass_instrument_lock_calls = {
   .type = GIMPLE_PASS,
   .name = "instr_locks",
@@ -786,6 +819,9 @@ int plugin_init(struct plugin_name_args *plugin_info, struct plugin_gcc_version 
 
   /* Register the main GIMPLE pass, which performs the actual instrumentation. */
   register_callback(plugin_name, PLUGIN_PASS_MANAGER_SETUP, NULL, &pass_info);
+
+  /* Register our cleanup function. */
+  register_callback(plugin_name, PLUGIN_FINISH, cleanup, NULL);
 
   return 0;
 }
