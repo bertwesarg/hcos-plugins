@@ -639,7 +639,8 @@ static void read_config_file(const char *filename)
   return;
 
  out_file_err:
-  fclose(file);
+  if (file != NULL)
+    fclose(file);
   error("(Lock Trace) Failed to read config file %s: %s", filename, strerror(errno));
   return;
 
