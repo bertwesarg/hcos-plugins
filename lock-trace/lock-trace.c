@@ -74,10 +74,10 @@ static int verbose = true;
 #endif
 
 /* Default config file */
-const char *config_file_name = "lock-trace.config";
+static const char *config_file_name = "lock-trace.config";
 
 /* A type node for lock hook functions. */
-tree lock_hook_type = NULL;
+static tree lock_hook_type = NULL;
 
 enum locking_semantics {
   LS_NOT_LOCK,
