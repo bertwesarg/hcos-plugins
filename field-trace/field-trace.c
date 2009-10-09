@@ -61,8 +61,8 @@ extern void assemble_variable (tree, int, int, int);
 /* GCC only allows plug-ins that include this symbol. */
 int plugin_is_GPL_compatible;
 
-#define DEBUG
-#define PAUSE_ON_START
+//#define DEBUG
+//#define PAUSE_ON_START
 
 #define NOINSTRUMENT_ATTR "hcos_noinstrument"
 #define MARKED_ATTR "hcos_marked"
@@ -764,9 +764,6 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
   /* Name every scratch variable with an index, so that each name is unique. */
   static unsigned int scratch_index = 0;
 
-  fprintf(stderr, "find_field_refs: ");
-  print_generic_stmt(stderr, *node, 0);
-
   if (TREE_CODE(*node) == COMPONENT_REF && component_ref_matches_directive(*node, directive))
     {
       int is_marked;
@@ -1095,7 +1092,6 @@ static unsigned int transform_gimple()
 						 build_pointer_type(char_type_node), /*File name*/
 						 integer_type_node, /* Line number */
 						 NULL_TREE);
-      fprintf(stderr, "Init field_hook_type: %p\n", field_hook_type);
 
       read_config_file(config_file_name);
       init_completed = true;
