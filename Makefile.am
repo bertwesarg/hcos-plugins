@@ -1,1 +1,1 @@
-SUBDIRS = verbose-dump lock-trace
+SUBDIRS = verbose-dump lock-trace field-trace

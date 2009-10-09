@@ -67,6 +67,8 @@ AC_SUBST([gcc_includes], [$gcc_includes])
 AC_CONFIG_FILES([Makefile
                  verbose-dump/Makefile
                  lock-trace/Makefile
-                 lock-trace/test/Makefile])
+                 lock-trace/test/Makefile
+                 field-trace/Makefile
+                 field-trace/test/Makefile])
 
 AC_OUTPUT
