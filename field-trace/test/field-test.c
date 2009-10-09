@@ -1,31 +1,38 @@
 /* A simple test that exercises Hook insertions for field acceses. */
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
-#define noinstrument __attribute__((hcos_noinstrument))
-#define mark_access __attribute__((hcos_marked))
+#include "test-harness-preamble.h"
 
-struct inode {
+/* Must define an expected[] array for test-harness.h to be
+   meaningful. */
+static struct expected_report expected[] = {
+  SIMPLE_WRITE(foo, field2, 1, 58),
+  SIMPLE_WRITE(foo, field2, 1, 59),
+  SIMPLE_READ(foo, field1, 0, 59),
+  SIMPLE_WRITE(foo, field1, 0, 59),
+  SIMPLE_WRITE(foo, field1, 0, 59),
+  SIMPLE_WRITE(foo, field1, 0, 59),
+  SIMPLE_WRITE(foo, field1, 0, 59),
+  SIMPLE_WRITE(foo, field1, 0, 59),
+};
+
+#include "test-harness.h"
+
+struct foo {
   int field1;
   int field2;
 };
 
-struct simple_t {
-  int x;
-  int y;
-};
-
-struct box_t {
-  struct simple_t ul;
-  struct simple_t lr;
-};
-
-noinstrument void __report_inode_access(struct inode *inode, const char *record,
+noinstrument void __report_field_access(void *record_ptr, const char *record,
 					const char *field, int field_index,
 					int is_write, int is_marked,
 					unsigned long bitmask, int *scratch,
-					const char *filename, int lineno) {
-  int *field_val = (int *)inode;
+					const char *filename, int lineno)
+{
+  int *field_val = (int *)record_ptr;
   printf("At %s:%d\n", filename, lineno);
   printf("Field access: %s[Index: %d] >>>> %s (Value: %d) [%s]\n",
 	 record,
@@ -33,22 +40,26 @@ noinstrument void __report_inode_access(struct inode *inode, const char *record,
 	 field,
 	 *field_val,
 	 is_write ? "write" : "read");
+
+  check_report(record_ptr, record, field, field_index, is_write, is_marked,
+	       bitmask, scratch, filename, lineno);
 }
 
-int main() {
-  volatile struct inode inode;
-  volatile struct inode *ptr;
-  volatile struct inode **ptr2;
+int main()
+{
+  volatile struct foo my_foo;
+  volatile struct foo *ptr;
+  volatile struct foo **ptr2;
 
-  printf("Yay!\n");
+  expected_record_ptr = &my_foo;
 
-  inode.field2 = 10;
-  inode.field2 = 20;
+  my_foo.field2 = 10;
+  my_foo.field2 = 20;
 
   /* This should get reported as a read then a write. */
-  inode.field1++;
+  my_foo.field1++;
 
-  ptr = &inode;
+  ptr = &my_foo;
   ptr->field1 = 10;
   (*ptr).field1 = 20;
 
