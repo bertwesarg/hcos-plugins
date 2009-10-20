@@ -72,6 +72,7 @@ noinstrument void check_report(void *record_ptr, const char *record,
   check_bool("is_write", is_write, expected[num_reports].is_write);
   check_bool("is_marked", is_marked, expected[num_reports].is_marked);
   check_bitmask("bitmask", bitmask, expected[num_reports].bitmask);
+  check_int("lineno", lineno, expected[num_reports].lineno);
 
   num_reports++;
 }

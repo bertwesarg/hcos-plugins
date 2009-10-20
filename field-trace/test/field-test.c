@@ -9,14 +9,14 @@
 /* Must define an expected[] array for test-harness.h to be
    meaningful. */
 static struct expected_report expected[] = {
-  SIMPLE_WRITE(foo, field2, 1, 58),
-  SIMPLE_WRITE(foo, field2, 1, 59),
-  SIMPLE_READ(foo, field1, 0, 59),
-  SIMPLE_WRITE(foo, field1, 0, 59),
-  SIMPLE_WRITE(foo, field1, 0, 59),
-  SIMPLE_WRITE(foo, field1, 0, 59),
-  SIMPLE_WRITE(foo, field1, 0, 59),
-  SIMPLE_WRITE(foo, field1, 0, 59),
+  SIMPLE_WRITE(foo, field2, 1, 56),
+  SIMPLE_WRITE(foo, field2, 1, 57),
+  SIMPLE_READ(foo, field1, 0, 60),
+  SIMPLE_WRITE(foo, field1, 0, 60),
+  SIMPLE_WRITE(foo, field1, 0, 63),
+  SIMPLE_WRITE(foo, field1, 0, 64),
+  SIMPLE_WRITE(foo, field1, 0, 67),
+  SIMPLE_WRITE(foo, field1, 0, 68),
 };
 
 #include "test-harness.h"
@@ -51,7 +51,7 @@ int main()
   volatile struct foo *ptr;
   volatile struct foo **ptr2;
 
-  expected_record_ptr = &my_foo;
+  expected_record_ptr = (void *)&my_foo;
 
   my_foo.field2 = 10;
   my_foo.field2 = 20;
