@@ -108,23 +108,17 @@ static tree build_string_ptr(const char* string)
   tree		string_ref;
   tree		ret;
 
-  tree		min_value;
-  tree		size_in_align;
-
   string_len = strlen(string) + 1;
 
   string_tree = build_string(string_len, string);
   TREE_TYPE(string_tree) = build_array_type(char_type_node, build_index_type(size_int(string_len)));
 
-  min_value = TYPE_MIN_VALUE(TYPE_DOMAIN(TREE_TYPE(string_tree)));
-  size_in_align = build_int_cst(size_type_node, TREE_INT_CST_LOW(TYPE_SIZE(char_type_node)) / TYPE_ALIGN(char_type_node));
-
   string_ref = build4(ARRAY_REF,
                       char_type_node,
                       string_tree,
                       build_int_cst(TYPE_DOMAIN(TREE_TYPE(string_tree)), 0),
-                      min_value,
-                      size_in_align);
+                      NULL,
+                      NULL);
 
   ret = build1(ADDR_EXPR,
                build_pointer_type(TREE_TYPE(string_ref)),
@@ -349,6 +343,26 @@ static tree build_static(tree type, const char* name, tree initial)
   add_referenced_var(ret);
 
   return ret;
+}
+
+/* Create a GIMPLE statement assigning a reference to a temporary
+   variable, add that statement at the iterator gsi, then return the
+   temporary variable. */
+static tree assign_ref_to_tmp(gimple_stmt_iterator *gsi, tree ref, const char *tmp_prefix)
+{
+  tree tmp = create_tmp_var(TREE_TYPE(ref), tmp_prefix);
+
+  /* Construct an assign statement: tmp = ref; */
+  gimple assign_stmt = gimple_build_assign(tmp, ref);
+
+  /* The left side of the assignment should be an SSA_NAME, but we
+     can't create the SSA_NAME until after we build the assign
+     statement. */
+  gimple_assign_set_lhs(assign_stmt, make_ssa_name(tmp, assign_stmt));
+
+  gsi_insert_before(gsi, assign_stmt, GSI_SAME_STMT);
+
+  return gimple_assign_lhs(assign_stmt);
 }
 
 static tree find_bitop(tree *node, int *walk_subtrees, void *arg)
@@ -805,7 +819,7 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
 	  /*record_node = copy_node(record_node);*/
 	  record_node = stabilize_reference(record_node);
 	}
-      tree record_addr = build1(ADDR_EXPR, build_pointer_type(char_type_node), record_node);
+      tree record_addr = build1(ADDR_EXPR, build_pointer_type(TREE_TYPE(record_node)), record_node);
 
       tree record_name_ptr = get_record_name_ptr(*node);
       tree field_name_ptr = get_field_name_ptr(*node);
@@ -839,6 +853,7 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
       tree func_name_tree = build_string_ptr(input_filename);
       tree line_num_tree = build_int_cst(integer_type_node, input_line);
 
+      record_addr = assign_ref_to_tmp(iter, record_addr, "record_addr");
       hook_call = gimple_build_call(directive->hook_func, 10,
 				    record_addr,
 				    record_name_ptr,
