@@ -153,8 +153,8 @@ static tree build_string_ptr(const char *string)
                       char_type_node,
                       string_tree,
                       build_int_cst(TYPE_DOMAIN(TREE_TYPE(string_tree)), 0),
-                      min_value,
-                      size_in_align);
+                      NULL,
+                      NULL);
 
   ret = build1(ADDR_EXPR,
                build_pointer_type(TREE_TYPE(string_ref)),
