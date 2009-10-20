@@ -21,8 +21,8 @@
 /* Must define an expected[] array for test-harness.h to be
    meaningful. */
 static struct expected_report expected[] = {
-  SIMPLE_WRITE(foo, a, 0, 73),
-  SIMPLE_READ(foo, a, 0, 61),
+  SIMPLE_WRITE(foo, a, 0, 81),
+  SIMPLE_READ(foo, a, 0, 69),
 };
 
 #include "test-harness.h"
