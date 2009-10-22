@@ -74,10 +74,10 @@ static int verbose = true;
 #endif
 
 /* Default config file */
-const char *config_file_name = "lock-trace.config";
+static const char *config_file_name = "lock-trace.config";
 
 /* A type node for lock hook functions. */
-tree lock_hook_type = NULL;
+static tree lock_hook_type = NULL;
 
 enum locking_semantics {
   LS_NOT_LOCK,
@@ -153,8 +153,8 @@ static tree build_string_ptr(const char *string)
                       char_type_node,
                       string_tree,
                       build_int_cst(TYPE_DOMAIN(TREE_TYPE(string_tree)), 0),
-                      min_value,
-                      size_in_align);
+                      NULL,
+                      NULL);
 
   ret = build1(ADDR_EXPR,
                build_pointer_type(TREE_TYPE(string_ref)),
@@ -639,7 +639,8 @@ static void read_config_file(const char *filename)
   return;
 
  out_file_err:
-  fclose(file);
+  if (file != NULL)
+    fclose(file);
   error("(Lock Trace) Failed to read config file %s: %s", filename, strerror(errno));
   return;
 

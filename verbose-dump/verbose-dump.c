@@ -1303,7 +1303,7 @@ static struct opt_pass pass_plugin_test = {
 
 static struct plugin_pass pass_info = {
   .pass = &pass_plugin_test,
-  .reference_pass_name = "all_optimizations",
+  .reference_pass_name = "*all_optimizations",
   .ref_pass_instance_number = 0,
   .pos_op = PASS_POS_INSERT_BEFORE,
 };
