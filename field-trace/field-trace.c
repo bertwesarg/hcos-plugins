@@ -797,7 +797,7 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
 	 If the left operand of the COMPONENT_REF (which is the inode
 	 we're looking for) is a decl, then it's ok to reference its
 	 node directly.  Otherwise, we need to copy the node. */
-      tree record_node = TREE_OPERAND(*node, 0);
+      tree record_node = get_record(*node);
       is_marked = is_record_node_marked(record_node);
       if (!IS_TYPE_OR_DECL_P(record_node))
 	{
