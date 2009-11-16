@@ -6,7 +6,7 @@
    expected[] array. */
 
 #define noinstrument __attribute__((hcos_noinstrument))
-#define mark_access __attribute__((hcos_marked))
+#define marked __attribute__((hcos_marked))
 
 #define FAIL(...) do {				\
     fprintf(stderr, "FAIL: " __VA_ARGS__);	\

@@ -17,8 +17,14 @@ struct expected_report {
   int lineno;
 };
 
-#define SIMPLE_READ(RECORD, FIELD, INDEX, LINENO)	\
+#define SIMPLE_READ(RECORD, FIELD, INDEX, LINENO)		\
   { #RECORD, #FIELD, INDEX, 0, 0, (unsigned long)-1, LINENO }
 
-#define SIMPLE_WRITE(RECORD, FIELD, INDEX, LINENO)	\
+#define SIMPLE_WRITE(RECORD, FIELD, INDEX, LINENO)		\
   { #RECORD, #FIELD, INDEX, 1, 0, (unsigned long)-1, LINENO }
+
+#define MARKED_READ(RECORD, FIELD, INDEX, LINENO)		\
+  { #RECORD, #FIELD, INDEX, 0, 1, (unsigned long)-1, LINENO }
+
+#define MARKED_WRITE(RECORD, FIELD, INDEX, LINENO)		\
+  { #RECORD, #FIELD, INDEX, 1, 1, (unsigned long)-1, LINENO }
