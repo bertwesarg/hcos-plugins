@@ -7,8 +7,8 @@ build of GCC from source control.  GCC releases will not contains
 plug-in support until 4.5.
 
 There are two plug-in-related branches in SVN (/plugin and /plugins),
-but both are closed and neither is out up-to-date enough for the
-plug-ins in this distribution.
+but both are closed and neither is up-to-date enough for the plug-ins
+in this distribution.
 
 These plug-ins are tested with the 4.5-20090910 snapshot (SVN revision
 151619).
@@ -43,15 +43,15 @@ cd $PLUGIN_BASE/build-svn
 # Note that the --enable-languages flag is entirely optional.  Omit
 # the flag to compile all languages, or specify only the languages you
 # want for a faster build.
+../gcc-svn/configure --prefix=$PLUGIN_BASE/install-svn           \
+  		     --enable-languages=c,c++
+
 # Also optional is the CFLAGS specification.  If you intend to develop
 # plug-ins, you may find it useful to build GCC with debugging turned
 # on.  Otherwise, omit these CFLAGS for a significantly faster
 # compiler.
-../gcc-svn/configure --prefix=$PLUGIN_BASE/install-svn           \
-  		     --enable-languages=c,c++ CFLAGS='-g -O0'
-
 # This process will take several hours on some machines.
-make
+make CFLAGS='-g -O0'
 make install
 
 ---
