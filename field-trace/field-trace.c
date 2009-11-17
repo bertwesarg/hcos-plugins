@@ -554,107 +554,131 @@ static void get_bitmasks(basic_block bb, htab_t comp_ref_bitmasks)
 
   for (gsi = gsi_start_bb(bb) ; !gsi_end_p(gsi) ; gsi_next(&gsi))
     {
-      gimple stmt = gsi_stmt(gsi);
-      tree bitop = walk_gimple_op(stmt, find_bitop, NULL);
+      gimple stmt;
+      tree bitop;
+      tree dest;
+      tree left;
+      tree right;
+      enum tree_code bitop_code;
 
-      if (bitop != NULL)
+      stmt = gsi_stmt(gsi);
+
+      if (gimple_code(stmt) != GIMPLE_ASSIGN)
+	continue;  /* Only looking for GIMPLE_ASSIGN nodes. */
+
+      /* In gcc 4.3 (whence this plug-in was ported), a bit operation
+	 would be represented by an assign statement
+	 (GIMPLE_MODIFY_STMT) with a bit expression tree node on its
+	 right hand side.  New GIMPLE tuples can embed the expression
+	 _within_ the GIMPLE_ASSIGN node!  So I guess we have to check
+	 for that too. */
+      bitop_code = gimple_assign_rhs_code(stmt);
+      if (bitop_code == BIT_IOR_EXPR || bitop_code == BIT_AND_EXPR)
+	{
+	  left = gimple_op(stmt, 1);
+	  right = gimple_op(stmt, 2);
+	}
+      else if ((bitop = walk_gimple_op(stmt, find_bitop, NULL)) != NULL)
+	{
+	  bitop_code = TREE_CODE(bitop);
+	  left = TREE_OPERAND(bitop, 0);
+	  right = TREE_OPERAND(bitop, 1);
+	}
+      else
+	{
+	  /* No bit operation here. */
+	  continue;
+	}
+
+      if (verbose)
+	fprintf(stderr, "Found bitop at line %d\n", gimple_lineno(stmt));
+
+      dest = gimple_op(stmt, 0);
+
+      tree source;
+      tree bitmask;
+      if (TREE_CODE(left) == COMPONENT_REF)
+	{
+	  source = left;
+	  bitmask = right;
+	}
+      else if (TREE_CODE(right) == COMPONENT_REF)
+	{
+	  source = right;
+	  bitmask = left;
+	}
+      else if (TREE_CODE(left) == VAR_DECL || TREE_CODE(left) == SSA_NAME)
+	{
+	  source = left;
+	  bitmask = right;
+	}
+      else if (TREE_CODE(right) == VAR_DECL || TREE_CODE(right) == SSA_NAME)
+	{
+	  source = right;
+	  bitmask = left;
+	}
+      else
+	{
+	  source = NULL;
+	  bitmask = NULL;
+	}
+
+      /* We found a variable that is being masked with a bitwise
+	 operator (along with the mask itself).  Let's trace back
+	 through previous statements to find the variable's source.
+	 We want to know if that source is a COMPONENT_REF. */
+      source = trace_source(gsi, source);
+
+      if (source != NULL)
 	{
 	  if (verbose)
-	    fprintf(stderr, "Found bitop at line %d\n", gimple_lineno(stmt));
+	    fprintf(stderr, "Found bitmask source: %p.\n", source);
 
-	  tree dest = NULL;
-	  if (gimple_code(stmt) == GIMPLE_ASSIGN &&
-	      gimple_op(stmt, 1) == bitop)
-	    dest = gimple_op(stmt, 0);
+	  /* Build the bitmask */
+	  bitmask = stabilize_reference(bitmask);
+	  if (TREE_TYPE(bitmask) != long_unsigned_type_node) /* (unsigned long)bitmask */
+	    bitmask = build1(NOP_EXPR, long_unsigned_type_node, bitmask);
 
-	  tree left = TREE_OPERAND(bitop, 0);
-	  tree right = TREE_OPERAND(bitop, 1);
+	  /* Now we trace _forward_.  We want to know where the
+	     resulting variable gets assigned.  We're trying to find
+	     statements like this one:
 
-	  tree source;
-	  tree bitmask;
-	  if (TREE_CODE(left) == COMPONENT_REF)
+	     inode->i_state |= I_DIRTY;
+	  */
+	  dest = trace_dest(gsi, dest);
+
+	  if (verbose && dest != NULL)
+	    fprintf(stderr, "Found bitmask destination: %p.\n", dest);
+
+
+	  if (dest != NULL && source_and_dest_match(source, dest))
 	    {
-	      source = left;
-	      bitmask = right;
-	    }
-	  else if (TREE_CODE(right) == COMPONENT_REF)
-	    {
-	      source = right;
-	      bitmask = left;
-	    }
-	  else if (TREE_CODE(left) == VAR_DECL || TREE_CODE(left) == SSA_NAME)
-	    {
-	      source = left;
-	      bitmask = right;
-	    }
-	  else if (TREE_CODE(right) == VAR_DECL || TREE_CODE(right) == SSA_NAME)
-	    {
-	      source = right;
-	      bitmask = left;
+	      if (verbose)
+		fprintf(stderr, "Matched source and destination.\n");
+
+	      /* Invert the bitmask if necessary. */
+	      if (bitop_code == BIT_AND_EXPR)
+		bitmask = build1(BIT_NOT_EXPR, long_unsigned_type_node, bitmask); /* ~bitmask */
+
+	      /* This is a read followed by an assign (like a |=
+		 or &= operation).  Associate the bitmask with the
+		 _destination_. */
+	      associate_bitmask(comp_ref_bitmasks, dest, bitmask);
+
+	      /* Associate an empty bitmask (0x0) with the source
+		 read to indicate that it is _inert_. */
+	      associate_bitmask(comp_ref_bitmasks, source,
+				build_int_cst(long_unsigned_type_node, 0x0));
 	    }
 	  else
 	    {
-	      source = NULL;
-	      bitmask = NULL;
-	    }
+	      /* Invert the bitmask if necessary. */
+	      if (bitop_code == BIT_IOR_EXPR)
+		bitmask = build1(BIT_NOT_EXPR, long_unsigned_type_node, bitmask); /* ~bitmask */
 
-	  /* We found a variable that is being masked with a bitwise
-	     operator (along with the mask itself).  Let's trace back
-	     through previous statements to find the variable's source.
-	     We want to know if that source is a COMPONENT_REF. */
-	  source = trace_source(gsi, source);
-
-	  if (source != NULL)
-	    {
-	      if (verbose)
-		fprintf(stderr, "Found bitmask source: %p.\n", source);
-
-	      /* Build the bitmask */
-	      bitmask = stabilize_reference(bitmask);
-	      if (TREE_TYPE(bitmask) != long_unsigned_type_node) /* (unsigned long)bitmask */
-		bitmask = build1(NOP_EXPR, long_unsigned_type_node, bitmask);
-
-	      /* Now we trace _forward_.  We want to know where the
-		 resulting variable gets assigned.  We're trying to find
-		 statements like this one:
-
-		 inode->i_state |= I_DIRTY;
-	      */
-	      dest = trace_dest(gsi, dest);
-
-	      if (verbose && dest != NULL)
-		fprintf(stderr, "Found bitmask destination: %p.\n", dest);
-
-
-	      if (dest != NULL && source_and_dest_match(source, dest))
-		{
-		  if (verbose)
-		    fprintf(stderr, "Matched source and destination.\n");
-
-		  /* Invert the bitmask if necessary. */
-		  if (TREE_CODE(bitop) == BIT_AND_EXPR)
-		    bitmask = build1(BIT_NOT_EXPR, long_unsigned_type_node, bitmask); /* ~bitmask */
-
-		  /* This is a read followed by an assign (like a |=
-		     or &= operation).  Associate the bitmask with the
-		     _destination_. */
-		  associate_bitmask(comp_ref_bitmasks, dest, bitmask);
-
-		  /* Associate an empty bitmask (0x0) with the source
-		     read to indicate that it is _inert_. */
-		  associate_bitmask(comp_ref_bitmasks, source,
-				    build_int_cst(long_unsigned_type_node, 0x0));
-		}
-	      else
-		{
-		  /* Invert the bitmask if necessary. */
-		  if (TREE_CODE(bitop) == BIT_IOR_EXPR)
-		    bitmask = build1(BIT_NOT_EXPR, long_unsigned_type_node, bitmask); /* ~bitmask */
-
-		  /* This is just a straight read.  Associate the
-		     bitmask with the _source_. */
-		  associate_bitmask(comp_ref_bitmasks, source, bitmask);
-		}
+	      /* This is just a straight read.  Associate the
+		 bitmask with the _source_. */
+	      associate_bitmask(comp_ref_bitmasks, source, bitmask);
 	    }
 	}
     }
@@ -836,6 +860,7 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
 	  if (verbose)
 	    fprintf(stderr, "Found bitmask mapping at line %d.\n", input_line);
 	  bitmask_node = (*mapping)->bitmask;
+	  bitmask_node = assign_ref_to_tmp(iter, bitmask_node, "bitmask");
 	}
       else
 	{
