@@ -652,16 +652,7 @@ static void read_config_file(const char *filename)
 
 static unsigned int transform_gimple()
 {
-  static bool init_completed = false;
-
   const char *function_name;
-
-  /* Do initialization the first time transform_gimple gets called. */
-  if (!init_completed)
-    {
-      read_config_file(config_file_name);
-      init_completed = true;
-    }
 
   /* Since the last time we initialized lock_hook_type, the garbage
      collector may have destroyed it.  Set it to NULL and whoever
@@ -825,6 +816,8 @@ int plugin_init(struct plugin_name_args *plugin_info, struct plugin_gcc_version 
 		  argv[i].key);
 	}
     }
+
+  read_config_file(config_file_name);
 
   /* Set up a callback to register our attributes. */
   register_callback(plugin_name, PLUGIN_ATTRIBUTES, register_plugin_attributes, NULL);
