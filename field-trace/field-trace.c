@@ -91,7 +91,7 @@ typedef struct field_directive
   const char *struct_name;
   const char *field_name;
 
-  tree hook_func;
+  char *hook_func_name;
 } field_directive;
 
 DEF_VEC_O(field_directive);
@@ -99,6 +99,34 @@ DEF_VEC_ALLOC_O(field_directive, heap);
 static VEC(field_directive, heap) *field_directive_vec;
 
 tree field_hook_type = NULL;
+
+static tree get_field_hook_type()
+{
+  if (field_hook_type == NULL)
+    {
+      /* Construct the C type for field-access hook functions.
+       * Functions with this type have prototype:
+       * void __report_field_access(void *record_ptr, const char *record, const char *field,
+       *                            int field_index, int is_write, int is_marked,
+       *                            unsigned long bitmask, int *scratch, const char *filename,
+       *                            int lineno);
+       */
+      field_hook_type = build_function_type_list(void_type_node,
+						 build_pointer_type(char_type_node),
+						 build_pointer_type(char_type_node),
+						 build_pointer_type(char_type_node),
+						 integer_type_node,
+						 integer_type_node,
+						 integer_type_node,
+						 long_unsigned_type_node,
+						 build_pointer_type(integer_type_node),
+						 build_pointer_type(char_type_node), /*File name*/
+						 integer_type_node, /* Line number */
+						 NULL_TREE);
+    }
+
+  return field_hook_type;
+}
 
 static tree build_string_ptr(const char* string)
 {
@@ -815,6 +843,8 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
       fprintf(stderr, "  Found component ref.\n");
 #endif
 
+      tree hook_func_decl = build_fn_decl(directive->hook_func_name, get_field_hook_type());
+
       /* Construct the first argument to the hook function, which is a
 	 pointer to the accessed inode.
 
@@ -879,7 +909,7 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
       tree line_num_tree = build_int_cst(integer_type_node, input_line);
 
       record_addr = assign_ref_to_tmp(iter, record_addr, "record_addr");
-      hook_call = gimple_build_call(directive->hook_func, 10,
+      hook_call = gimple_build_call(hook_func_decl, 10,
 				    record_addr,
 				    record_name_ptr,
 				    field_name_ptr,
@@ -940,7 +970,7 @@ void parse_field_directive(const char *directive_string)
 
   /* The last argument ends with the end of the string. */
   str_size = strlen(str_start);
-  args[2] = alloca(str_size + 1);
+  args[2] = xmalloc(str_size + 1);
   memcpy(args[2], str_start, str_size);
   args[2][str_size] = '\0';
 
@@ -969,7 +999,7 @@ void parse_field_directive(const char *directive_string)
      field_directive structs. */
   directive.struct_name = args[0];
   directive.field_name = args[1];
-  directive.hook_func = build_fn_decl(args[2], field_hook_type);
+  directive.hook_func_name = args[2];
   VEC_safe_push(field_directive, heap, field_directive_vec, &directive);
 
   if (verbose)
@@ -1105,37 +1135,12 @@ static void read_config_file(const char *filename)
 
 static unsigned int transform_gimple()
 {
-  static bool init_completed = false;
-
   const char *function_name;
 
-  /* Do initialization the first time transform_gimple gets called. */
-  if (!init_completed)
-    {
-      //TODO: This does not belong here.
-      /* Construct the C type for field-access hook functions.
-       * Functions with this type have prototype:
-       *   func_name(struct inode_t inode, char *record_name, char *field_name,
-       *             int field_index, int is_write, int is_marked,
-       *             unsigned long bitmask, int *scratch, char *filename,
-       *             int lineno);
-       */
-      field_hook_type = build_function_type_list(void_type_node,
-						 build_pointer_type(char_type_node),
-						 build_pointer_type(char_type_node),
-						 build_pointer_type(char_type_node),
-						 integer_type_node,
-						 integer_type_node,
-						 integer_type_node,
-						 long_unsigned_type_node,
-						 build_pointer_type(integer_type_node),
-						 build_pointer_type(char_type_node), /*File name*/
-						 integer_type_node, /* Line number */
-						 NULL_TREE);
-
-      read_config_file(config_file_name);
-      init_completed = true;
-    }
+  /* Since the last time we initialized field_hook_type, the garbage
+     collector may have destroyed it.  Set it to NULL and whoever
+     needs it will initialize it on demand. */
+  field_hook_type = NULL;
 
   function_name = IDENTIFIER_POINTER(DECL_NAME(current_function_decl));
 
@@ -1277,6 +1282,8 @@ int plugin_init(struct plugin_name_args *plugin_info, struct plugin_gcc_version 
 		  argv[i].key);
 	}
     }
+
+  read_config_file(config_file_name);
 
   /* Set up a callback to register our attributes. */
   register_callback(plugin_name, PLUGIN_ATTRIBUTES, register_plugin_attributes, NULL);
