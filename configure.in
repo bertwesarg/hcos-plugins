@@ -69,6 +69,7 @@ AC_CONFIG_FILES([Makefile
                  lock-trace/Makefile
                  lock-trace/test/Makefile
                  field-trace/Makefile
-                 field-trace/test/Makefile])
+                 field-trace/test/Makefile
+		 entryexit-trace/Makefile])
 
 AC_OUTPUT
