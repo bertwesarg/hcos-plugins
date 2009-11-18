@@ -88,8 +88,8 @@ static const char *config_file_name = "field-trace.config";
    a NULL field_name matches any field. */
 typedef struct field_directive
 {
-  const char *struct_name;
-  const char *field_name;
+  char *struct_name;
+  char *field_name;
 
   char *hook_func_name;
 } field_directive;
@@ -1217,6 +1217,16 @@ static void register_plugin_attributes(void *event_data, void *data)
    all the memory we allocated. */
 static void cleanup(void *event_date, void *data)
 {
+  struct field_directive *directive;
+  unsigned int i;
+
+  for (i = 0 ; VEC_iterate(field_directive, field_directive_vec, i, directive) ; i++)
+    {
+      free(directive->struct_name);
+      free(directive->field_name);
+      free(directive->hook_func_name);
+    }
+  VEC_free(field_directive, heap, field_directive_vec);
 }
 
 static struct opt_pass pass_instrument_field_refs = {
