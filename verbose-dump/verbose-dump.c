@@ -1204,8 +1204,8 @@ static void print_all_passes()
   out_printf("all_lowering_passes\n\n");
   print_pass_list(all_lowering_passes, 0);
 
-  out_printf("\nall_ipa_passes\n\n");
-  print_pass_list(all_ipa_passes, 0);
+  out_printf("\nall_small_ipa_passes\n\n");
+  print_pass_list(all_small_ipa_passes, 0);
 
   out_printf("\nall_passes\n\n");
   print_pass_list(all_passes, 0);
@@ -1301,7 +1301,7 @@ static struct opt_pass pass_plugin_test = {
   .todo_flags_finish = 0,
 };
 
-static struct plugin_pass pass_info = {
+static struct register_pass_info pass_info = {
   .pass = &pass_plugin_test,
   .reference_pass_name = "*all_optimizations",
   .ref_pass_instance_number = 0,

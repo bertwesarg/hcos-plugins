@@ -767,7 +767,7 @@ static struct opt_pass pass_instrument_lock_calls = {
   .todo_flags_finish = TODO_update_ssa,
 };
 
-static struct plugin_pass pass_info = {
+static struct register_pass_info pass_info = {
   .pass = &pass_instrument_lock_calls,
   .reference_pass_name = "*all_optimizations",
   .ref_pass_instance_number = 0,
