@@ -165,10 +165,9 @@ static bool check_func(const char *function_name)
 {
   int i;
   const char *check_name;
-  int wants_instr = 0;
   for (i = 0 ; VEC_iterate(func_name, func_name_vec, i, check_name) ; i++)
-      if (strcmp(function_name, check_name) == 0)
-	return true;
+    if (strcmp(function_name, check_name) == 0)
+      return true;
 
   return false;
 }
@@ -176,7 +175,6 @@ static bool check_func(const char *function_name)
 static unsigned int transform_gimple()
 {
   const char *function_name;
-
   function_name = IDENTIFIER_POINTER(DECL_NAME(current_function_decl));
 
   if (lookup_attribute(NOINSTRUMENT_ATTR, DECL_ATTRIBUTES(cfun->decl)) != NULL)
@@ -200,21 +198,24 @@ static void handle_config_pair(const char *key, const char *value)
 {
   if (strcmp(key, "func") == 0)
     {
-      VEC_safe_push(func_name, heap, func_name_vec, value);
+      if (verbose)
+	fprintf(stderr, "(Entry/Exit Trace) Found config entry for function: %s.\n", value);
+
+      VEC_safe_push(func_name, heap, func_name_vec, xstrdup(value));
     }
   else if (strcmp(key, "entry-hook") == 0)
     {
       if (entry_hook_name != NULL)
 	error("Entry/Exit Trace: Plug-in options specify more than one entry hook name");
 
-      entry_hook_name = value;
+      entry_hook_name = xstrdup(value);
     }
   else if (strcmp(key, "exit-hook") == 0)
     {
       if (exit_hook_name != NULL)
 	error("Entry/Exit Trace: Plug-in options specify more than one exit hook name");
 
-      exit_hook_name = value;
+      exit_hook_name = xstrdup(value);
     }
   else if (strcmp(key, "verbose") == 0)
     {
