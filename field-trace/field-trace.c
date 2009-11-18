@@ -207,7 +207,8 @@ static const char *get_node_name(tree node)
   tree type_name = get_type_identifier(TREE_TYPE(node));
   if (type_name == NULL)
     {
-      fprintf(stderr, "Anonymous type.\n");
+      if (verbose)
+	fprintf(stderr, "Anonymous type.\n");
       return "__anon";
     }
 

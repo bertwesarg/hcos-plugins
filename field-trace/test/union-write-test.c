@@ -38,10 +38,10 @@ noinstrument void __report_field_access(void *record_ptr, const char *record,
 					unsigned long bitmask, int *scratch,
 					const char *filename, int lineno)
 {
-  fprintf(stderr, "%s reported for field %s (index: %d)\n",
-	  (is_write ? "Write" : "Read"),
-	  field,
-	  field_index);
+  printf("%s reported for field %s (index: %d)\n",
+	 (is_write ? "Write" : "Read"),
+	 field,
+	 field_index);
 
   check_report(record_ptr, record, field, field_index, is_write, is_marked,
 	       bitmask, scratch, filename, lineno);
