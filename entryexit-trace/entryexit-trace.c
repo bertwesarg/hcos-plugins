@@ -73,13 +73,13 @@ static int verbose = true;
 /* Default config file */
 static const char *config_file_name = "entryexit-trace.config";
 
-typedef const char *func_name;
+typedef char *func_name;
 DEF_VEC_P(func_name);
 DEF_VEC_ALLOC_P(func_name, heap);
 static VEC(func_name, heap) *func_name_vec;
 
-const char *entry_hook_name = NULL;
-const char *exit_hook_name = NULL;
+char *entry_hook_name = NULL;
+char *exit_hook_name = NULL;
 
 static tree build_string_ptr(const char* string)
 {
@@ -164,7 +164,7 @@ static void insert_entryexit_hooks(const char *function_name)
 static bool check_func(const char *function_name)
 {
   int i;
-  const char *check_name;
+  char *check_name;
   for (i = 0 ; VEC_iterate(func_name, func_name_vec, i, check_name) ; i++)
     if (strcmp(function_name, check_name) == 0)
       return true;
@@ -334,6 +334,16 @@ static void register_plugin_attributes(void *event_data, void *data)
    all the memory we allocated. */
 static void cleanup(void *event_date, void *data)
 {
+  int i;
+  char *name_iter;
+
+  free(entry_hook_name);
+  free(exit_hook_name);
+
+  /* Clear out the lock_owner_vec list. */
+  for (i = 0 ; VEC_iterate(func_name, func_name_vec, i, name_iter) ; i++)
+    free(name_iter);
+  VEC_free(func_name, heap, func_name_vec);
 }
 
 static struct opt_pass pass_instrument_field_refs = {
