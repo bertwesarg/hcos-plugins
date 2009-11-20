@@ -3,15 +3,15 @@
 ---
 
 In order to use plug-ins, you will need a bleeding-edge development
-build of GCC from source control.  GCC releases will not contains
+build of GCC from source control.  GCC releases will not contain
 plug-in support until 4.5.
 
 There are two plug-in-related branches in SVN (/plugin and /plugins),
 but both are closed and neither is up-to-date enough for the plug-ins
 in this distribution.
 
-These plug-ins are tested with the 4.5-20090910 snapshot (SVN revision
-151619).
+These plug-ins are tested with the 4.5-20091105 snapshot (SVN revision
+153952).
 
 You can find instructions for pulling from GCC's Subversion repository
 here:
