@@ -77,4 +77,15 @@ noinstrument void check_report(void *record_ptr, const char *record,
   num_reports++;
 }
 
+#define FINISH() do {						\
+    if (num_reports == expected_size)				\
+      return 0;  /* Success */					\
+    else if (num_reports == 0)					\
+      FAIL("No hook functions executed.\n");			\
+    else							\
+      FAIL("Number of hook executions did not match expected."	\
+	   "  Reported: %d, Expected: %d\n",			\
+	   num_reports, expected_size);				\
+} while(1)
+
 #endif

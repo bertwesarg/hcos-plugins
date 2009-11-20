@@ -83,5 +83,5 @@ int main()
 
   print_foo(&foo);
 
-  return 0;
+  FINISH();
 }

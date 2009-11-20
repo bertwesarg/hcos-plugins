@@ -90,5 +90,5 @@ int main()
   expected_record_ptr = &foo;
   read_marked(&foo);
 
-  return 0;
+  FINISH();
 }

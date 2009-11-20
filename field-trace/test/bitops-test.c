@@ -112,5 +112,5 @@ int main()
 {
   test_bitmask(&my_inode);
 
-  return 0;
+  FINISH();
 }

@@ -88,5 +88,5 @@ int main() {
   if (foo->a)
     printf("Test\n");
 
-  return 0;
+  FINISH();
 }

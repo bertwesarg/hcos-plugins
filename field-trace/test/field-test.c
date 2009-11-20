@@ -67,5 +67,5 @@ int main()
   (*ptr2)->field1 = 10;
   (*ptr2)->field1 = 20;
 
-  return 0;
+  FINISH();
 }

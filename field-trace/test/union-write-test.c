@@ -55,5 +55,5 @@ int main()
 
   printf("Value in union: %u\n", foo.un.b);
 
-  return 0;
+  FINISH();
 }
