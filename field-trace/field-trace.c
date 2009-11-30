@@ -739,10 +739,26 @@ static int is_record_node_marked(tree record_node)
     }
 }
 
+/* Returns true if the given node is a DEBUG_EXPR or references a
+   DEBUG_EXPR_DECL. */
+static bool is_debug_ref(tree node)
+{
+  if (TREE_CODE(node) == INDIRECT_REF)
+    return is_debug_ref(TREE_OPERAND(node, 0));
+  else if (TREE_CODE(node) == DEBUG_EXPR_DECL)
+    return true;
+  else
+    return false;
+}
+
 /* Return true if the given field directive indicates that we should
    instrument this COMPONENT_REF. */
 static bool component_ref_matches_directive(tree node, struct field_directive *directive)
 {
+  /* Never match a DEBUG_EXPR_DECL. */
+  if (is_debug_ref(get_record(node)))
+    return false;
+
   /* Does the struct name match?  A NULL struct_name matches everything. */
   if (directive->struct_name && strcmp(get_record_name(node), directive->struct_name) != 0)
     return false;
