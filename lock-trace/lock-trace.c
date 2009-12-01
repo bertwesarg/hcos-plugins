@@ -364,15 +364,20 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
      description in the ssa-test test case.)*/
   while (TREE_CODE(lock) == SSA_NAME)
     {
-      /* the SSA_NAME_DEF_STMT for lock should be a GIMPLE_MODIFY_STMT
+      gimple def_stmt = SSA_NAME_DEF_STMT(lock);
+
+      /* The SSA_NAME_DEF_STMT for lock should be a GIMPLE_ASSIGN
 	 (because it assigns a value to lock).  However, when the lock
 	 is assigned directly fom a function argument, the
 	 SSA_NAME_DEF_STMT is just a NOP statement.  In that case, we
-	 can't determine an owner for the lock. */
-      if (gimple_code(SSA_NAME_DEF_STMT(lock)) == GIMPLE_NOP)
+	 can't determine an owner for the lock. 
+      */
+      if (gimple_code(def_stmt) == GIMPLE_NOP)
 	return;
+      else if (gimple_code(def_stmt) == GIMPLE_ASM)
+	return;  /* This also prevents us from deciding a lock owner. */
 
-      gcc_assert(gimple_code(SSA_NAME_DEF_STMT(lock)) == GIMPLE_ASSIGN);
+      gcc_assert(gimple_code(def_stmt) == GIMPLE_ASSIGN);
       lock = gimple_assign_rhs1(SSA_NAME_DEF_STMT(lock));
     }
 
