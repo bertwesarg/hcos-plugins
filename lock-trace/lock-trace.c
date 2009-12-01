@@ -374,8 +374,14 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
       */
       if (gimple_code(def_stmt) == GIMPLE_NOP)
 	return;
+      /* Can't determine a lock owner if the lock is defined in an asm
+	 directive.  */
       else if (gimple_code(def_stmt) == GIMPLE_ASM)
-	return;  /* This also prevents us from deciding a lock owner. */
+	return;
+      /* Can't determine a lock owner if the lock can be assigned from
+	 more than one place. */
+      else if (gimple_code(def_stmt) == GIMPLE_PHI)
+	return;
 
       gcc_assert(gimple_code(def_stmt) == GIMPLE_ASSIGN);
       lock = gimple_assign_rhs1(SSA_NAME_DEF_STMT(lock));
