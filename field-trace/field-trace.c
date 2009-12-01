@@ -376,13 +376,18 @@ static tree build_static(tree type, const char* name, tree initial)
 
 /* Create a GIMPLE statement assigning a reference to a temporary
    variable, add that statement at the iterator gsi, then return the
-   temporary variable. */
-static tree assign_ref_to_tmp(gimple_stmt_iterator *gsi, tree ref, const char *tmp_prefix)
+   temporary variable.\
+   If not is true, the assignment also inverts the ref (i.e., the ~
+   operator in C). */
+static tree assign_ref_to_tmp(gimple_stmt_iterator *gsi, tree ref, const char *tmp_prefix, bool not)
 {
   tree tmp = create_tmp_var(TREE_TYPE(ref), tmp_prefix);
 
   /* Construct an assign statement: tmp = ref; */
   gimple assign_stmt = gimple_build_assign(tmp, ref);
+
+  if (not)
+    gimple_assign_set_rhs_code(assign_stmt, BIT_NOT_EXPR);
 
   /* The left side of the assignment should be an SSA_NAME, but we
      can't create the SSA_NAME until after we build the assign
@@ -409,6 +414,7 @@ static tree find_bitop(tree *node, int *walk_subtrees, void *arg)
 struct bitmask_mapping {
   tree key;
   tree bitmask;
+  bool invert;
 };
 
 static hashval_t hash_bitmask_mapping(const void *key)
@@ -551,11 +557,12 @@ static bool source_and_dest_match(tree source, tree dest)
 }
 
 /* Create a mapping from a COMPONENT_REF to a bitmask. */
-static void associate_bitmask(htab_t comp_ref_bitmasks, tree comp_ref, tree bitmask)
+static void associate_bitmask(htab_t comp_ref_bitmasks, tree comp_ref, tree bitmask, bool invert)
 {
   struct bitmask_mapping *mapping = ggc_alloc(sizeof(struct bitmask_mapping));
   mapping->key = comp_ref;
   mapping->bitmask = bitmask;
+  mapping->invert = invert;
 
   struct bitmask_mapping **mapping_slot =
     (struct bitmask_mapping **)htab_find_slot(comp_ref_bitmasks, mapping->key, INSERT);
@@ -682,32 +689,31 @@ static void get_bitmasks(basic_block bb, htab_t comp_ref_bitmasks)
 
 	  if (dest != NULL && source_and_dest_match(source, dest))
 	    {
+	      bool invert; 
 	      if (verbose)
 		fprintf(stderr, "Matched source and destination.\n");
 
 	      /* Invert the bitmask if necessary. */
-	      if (bitop_code == BIT_AND_EXPR)
-		bitmask = build1(BIT_NOT_EXPR, long_unsigned_type_node, bitmask); /* ~bitmask */
+	      invert = (bitop_code == BIT_AND_EXPR);
 
 	      /* This is a read followed by an assign (like a |=
 		 or &= operation).  Associate the bitmask with the
 		 _destination_. */
-	      associate_bitmask(comp_ref_bitmasks, dest, bitmask);
+	      associate_bitmask(comp_ref_bitmasks, dest, bitmask, invert);
 
 	      /* Associate an empty bitmask (0x0) with the source
 		 read to indicate that it is _inert_. */
 	      associate_bitmask(comp_ref_bitmasks, source,
-				build_int_cst(long_unsigned_type_node, 0x0));
+				build_int_cst(long_unsigned_type_node, 0x0), false);
 	    }
 	  else
 	    {
 	      /* Invert the bitmask if necessary. */
-	      if (bitop_code == BIT_IOR_EXPR)
-		bitmask = build1(BIT_NOT_EXPR, long_unsigned_type_node, bitmask); /* ~bitmask */
+	      bool invert = (bitop_code == BIT_IOR_EXPR);
 
 	      /* This is just a straight read.  Associate the
 		 bitmask with the _source_. */
-	      associate_bitmask(comp_ref_bitmasks, source, bitmask);
+	      associate_bitmask(comp_ref_bitmasks, source, bitmask, invert);
 	    }
 	}
     }
@@ -907,7 +913,10 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
 	  if (verbose)
 	    fprintf(stderr, "Found bitmask mapping at line %d.\n", input_line);
 	  bitmask_node = (*mapping)->bitmask;
-	  bitmask_node = assign_ref_to_tmp(iter, bitmask_node, "bitmask");
+	  bitmask_node = assign_ref_to_tmp(iter, bitmask_node, "bitmask", false);
+
+	  if ((*mapping)->invert)
+	    bitmask_node = assign_ref_to_tmp(iter, bitmask_node, "inv_bitmask", true);
 	}
       else
 	{
@@ -925,7 +934,7 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
       tree func_name_tree = build_string_ptr(input_filename);
       tree line_num_tree = build_int_cst(integer_type_node, input_line);
 
-      record_addr = assign_ref_to_tmp(iter, record_addr, "record_addr");
+      record_addr = assign_ref_to_tmp(iter, record_addr, "record_addr", false);
       hook_call = gimple_build_call(hook_func_decl, 10,
 				    record_addr,
 				    record_name_ptr,
