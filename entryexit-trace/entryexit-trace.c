@@ -115,6 +115,7 @@ static void insert_entryexit_hooks(const char *function_name)
   tree exit_hook_decl;
 
   basic_block bb;
+  edge in_edge;
   gimple_stmt_iterator gsi;
   gimple stmt;
 
@@ -131,13 +132,12 @@ static void insert_entryexit_hooks(const char *function_name)
   exit_hook_decl = build_fn_decl(exit_hook_name, hook_type);
 
   /* Insert the entry hook. */
-  bb = ENTRY_BLOCK_PTR_FOR_FUNCTION(cfun)->next_bb;
-  gsi = gsi_start_bb(bb);
+  in_edge = single_succ_edge(ENTRY_BLOCK_PTR_FOR_FUNCTION(cfun));
   gimple hook_call = gimple_build_call(entry_hook_decl, 3,
 				       build_string_ptr(function_name),
 				       build_string_ptr(input_filename),
 				       build_int_cst(integer_type_node, input_line));
-  gsi_insert_before(&gsi, hook_call, GSI_SAME_STMT);
+  gsi_insert_on_edge_immediate(in_edge, hook_call);
 
   FOR_EACH_BB(bb)
     {
