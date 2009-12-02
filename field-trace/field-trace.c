@@ -167,7 +167,10 @@ static tree get_type_identifier(tree type)
      the real IDENTIFIER_NODE.*/
   type_name = TYPE_NAME(type);
   while (type_name != NULL && TREE_CODE(type_name) == TYPE_DECL)
-    type_name = TYPE_NAME(DECL_ORIGINAL_TYPE(type_name));
+    if (DECL_ORIGINAL_TYPE(type_name) != NULL)
+      type_name = TYPE_NAME(DECL_ORIGINAL_TYPE(type_name));
+    else
+      type_name = NULL;
   gcc_assert(type_name == NULL || TREE_CODE(type_name) == IDENTIFIER_NODE);
   return type_name;
 }
