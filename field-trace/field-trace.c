@@ -46,6 +46,7 @@
 #include "cgraph.h"
 #include "intl.h"
 #include "function.h"
+#include "output.h"
 #include "diagnostic.h"
 #include "timevar.h"
 #include "tree-iterator.h"
@@ -54,9 +55,6 @@
 #include "plugin.h"
 #include "gimple.h"
 #include "c-common.h"
-
-// TODO: Include output.h
-extern void assemble_variable (tree, int, int, int);
 
 /* GCC only allows plug-ins that include this symbol. */
 int plugin_is_GPL_compatible;
