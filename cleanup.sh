@@ -21,6 +21,7 @@ set -x
 make clean
 make distclean
 
+rm -f .in
 rm -f config.h.in
 rm -f config.h
 
