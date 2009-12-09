@@ -39,8 +39,8 @@ rm -f config.log config.status
 rm -f Makefile
 rm -f Makefile.in
 
-SRC_DIRS="verbose-dump lock-trace field-trace entryexit-trace"
-TEST_DIRS="lock-trace/test field-trace/test entryexit-trace/test"
+SRC_DIRS="verbose-dump lock-trace field-trace entryexit-trace malloc-trace"
+TEST_DIRS="lock-trace/test field-trace/test entryexit-trace/test malloc-trace/test"
 
 for DIR in $SRC_DIRS
 do
