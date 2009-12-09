@@ -183,7 +183,7 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
 
   tree func;
   tree hook_decl;
-  tree func_name_tree;
+  tree file_name_tree;
   tree line_num_tree;
 
   tree addr_arg;
@@ -249,13 +249,13 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
   hook_decl = build_fn_decl(mem_func->hook_func_name, mem_hook_type);
 
   /* File name and line number for this hook. */
-  func_name_tree = build_string_ptr(input_filename);
+  file_name_tree = build_string_ptr(input_filename);
   line_num_tree = build_int_cst(integer_type_node, input_line);
 
   hook_call = gimple_build_call(hook_decl, 4,
 				addr_arg,
 				size_arg,
-				func_name_tree,
+				file_name_tree,
 				line_num_tree);
 
   /* We are interested in the return value of MALLOC- and MMAP-style
@@ -352,14 +352,14 @@ static void parse_mem_func_desc(const char *desc_string)
     desc.semantics = KUNMAP;
   else
     {
-      error("(Kmalloc Trace) Invalid allocation semantics: %s.  Specify kmalloc, kmap or kunmap.", fields[1]);
+      error("(Malloc Trace) Invalid allocation semantics: %s.  Specify kmalloc, kmap or kunmap.", fields[1]);
       return;
     }
 
   /* There should not be more than two dashes. */
   if (strchr(str_start, '-') != NULL)
     {
-      error("(Kmalloc Trace) Invalid lock description");
+      error("(Malloc Trace) Invalid lock description");
       return;
     }
 
@@ -457,7 +457,7 @@ static unsigned int transform_gimple()
   mem_hook_type = build_function_type_list(void_type_node,
 					   ptr_type_node,  /* Address */
 					   integer_type_node,  /* Size */
-					   build_pointer_type(char_type_node),  /* Func */
+					   build_pointer_type(char_type_node),  /* File */
 					   integer_type_node,  /* Line number */
 					   NULL_TREE);
 
