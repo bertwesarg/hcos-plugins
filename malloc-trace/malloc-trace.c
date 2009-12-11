@@ -97,13 +97,11 @@ DEF_VEC_O(mem_func_desc);
 DEF_VEC_ALLOC_O(mem_func_desc, heap);
 static VEC(mem_func_desc, heap) *mem_func_vec;
 
-/* We only want to instrument allocations for certain types, given in
-   the mem_type_vec. */
+/* List of files we are willing to instrument. */
 typedef const char *char_ptr;
 DEF_VEC_P(char_ptr);
 DEF_VEC_ALLOC_P(char_ptr, heap);
-static VEC(char_ptr, heap) *mem_type_vec;
-static VEC(char_ptr, heap) *file_owner_vec;
+static VEC(char_ptr, heap) *file_vec;
 
 static tree build_string_ptr(const char* string)
 {
@@ -381,9 +379,10 @@ static void handle_config_pair(const char *key, const char *value)
     {
       parse_mem_func_desc(value);
     }
-  else if (strcmp(key, "file_owner_vec") == 0)
+  else if (strcmp(key, "file") == 0)
     {
-      VEC_safe_push(char_ptr, heap, file_owner_vec, xstrdup(value));
+      VEC_safe_push(char_ptr, heap, file_vec, xstrdup(value));
+
       if (verbose)
 	fprintf(stderr, "(Malloc Trace) Tracing locks in file: %s\n", value);
     }
@@ -450,6 +449,49 @@ static void read_config_file(const char *filename)
   return;
 }
 
+/* Does the given path match a reference path?  A path matches a
+   reference if its trailing path components match all the components
+   in the reference. */
+bool is_matching_path(const char *path, const char *reference)
+{
+  while (path != NULL)
+    {
+      while (*path == '/')
+	path++;
+
+      if (strcmp(path, reference) == 0)
+	return true;
+
+      path = strchr(path, '/');
+    };
+
+  return false;
+}
+
+static bool is_instrumented_file()
+{
+  const char *file_name = DECL_SOURCE_FILE(current_function_decl);
+
+  if (VEC_empty(char_ptr, file_vec))
+    {
+      /* If the user doesn't specify any files, instrument all files. */
+      return true;
+    }
+  else
+    {
+      int i;
+      const char *ref_file_name;
+      for (i = 0 ; VEC_iterate(char_ptr, file_vec, i, ref_file_name) ; i++)
+	  if (is_matching_path(file_name, ref_file_name))
+	    return true;
+
+      /* No matching reference file names.  Do not instrument anything
+	 in this file. */
+      return false;
+    }
+  
+}
+
 static unsigned int transform_gimple()
 {
   const char *function_name;
@@ -463,16 +505,23 @@ static unsigned int transform_gimple()
 
   function_name = IDENTIFIER_POINTER(DECL_NAME(current_function_decl));
 
+  if (is_instrumented_file())
+    {
+      if (verbose)
+	fprintf(stderr, "(Malloc Trace) Instrument function: %s\n", function_name);
+    }
+  else
+    {
+      return 0;  /* Do not instrument this function. */
+    }
+      
+
   if (lookup_attribute(NOINSTRUMENT_ATTR, DECL_ATTRIBUTES(cfun->decl)) != NULL)
     {
       if (verbose)
 	fprintf(stderr, "Function %s marked as noinstrument.  Skipping.\n", function_name);
       return 0;
     }
-
-#ifdef DEBUG
-  fprintf(stderr, "Function %s\n", function_name);
-#endif
 
   insert_alloc_hooks();
 
@@ -557,8 +606,7 @@ int plugin_init(struct plugin_name_args *plugin_info, struct plugin_gcc_version 
   int i;
 
   mem_func_vec = VEC_alloc(mem_func_desc, heap, 10);
-  mem_type_vec = VEC_alloc(char_ptr, heap, 10);
-  file_owner_vec = VEC_alloc(char_ptr, heap, 10);
+  file_vec = VEC_alloc(char_ptr, heap, 10);
 
 #ifdef DEBUG
   fprintf(stderr, "Initializing Lock Trace plugin.\n");
