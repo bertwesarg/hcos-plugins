@@ -39,9 +39,10 @@ struct expected_report {
   {MUNMAP, ADDR, 0, LINENO}
 
 static struct expected_report expected[] = {
-  MALLOC_CALL(&allocation1, sizeof(struct foo), 87),
-  MMAP_CALL(&allocation2, 90),
-  MUNMAP_CALL(&allocation2, 93),
+  MALLOC_CALL(&allocation1, sizeof(struct foo), 88),
+  MMAP_CALL(&allocation2, 91),
+  MUNMAP_CALL(&allocation2, 94),
+  MALLOC_CALL(&allocation1, sizeof(struct foo), 98),
 };
 
 static int num_reports = 0;
@@ -69,7 +70,7 @@ noinstrument void check_report(enum alloc_sem semantics, void *addr, unsigned in
 
 noinline void *kmalloc(unsigned int size)
 {
-  return &allocation1;
+  fprintf(stderr, "kmalloc!!!\n"); return &allocation1;
 }
 
 noinline void *kmap()
@@ -92,6 +93,9 @@ int main()
 
   kunmap(foo);
   printf("%p\n", foo);
+
+  /* Test the case when a function gets called without storing its return value. */
+  kmalloc(sizeof(struct foo));
 
   if (num_reports != expected_size)
     FAIL("Not enough hook executions (only %d of %d expected).", num_reports, expected_size);

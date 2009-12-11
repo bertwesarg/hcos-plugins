@@ -103,6 +103,22 @@ DEF_VEC_P(char_ptr);
 DEF_VEC_ALLOC_P(char_ptr, heap);
 static VEC(char_ptr, heap) *file_vec;
 
+/* Set up the mem_hook_type. */
+static tree get_mem_hook_type()
+{
+  if (mem_hook_type == NULL)
+    {
+      mem_hook_type = build_function_type_list(void_type_node,
+					       ptr_type_node,  /* Address */
+					       integer_type_node,  /* Size */
+					       build_pointer_type(char_type_node),  /* File */
+					       integer_type_node,  /* Line number */
+					       NULL_TREE);
+    }
+
+  return mem_hook_type;
+}
+
 static tree build_string_ptr(const char* string)
 {
   size_t	string_len;
@@ -200,14 +216,17 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
   /* What is the allocation address argument? */
   if (mem_func->semantics == KMALLOC || mem_func->semantics == KMAP)
     {
-      /* If this function isn't on the right side of an assignment,
-	 somebody screwed up bad.  We have no way to pass the result
-	 of the allocation to the hook function. */
+      /* If this function isn't on the right side of an assignment, we
+	 need to _put it_ on the right hand side of an assignment so
+	 we can grab its return value. */
       if (gimple_call_lhs(stmt) == NULL)
 	{
-	  error("(Malloc Trace) Result of allocation function is not available.  Did you call an "
-		"allocation function without storing its result?\n");
-	  return;
+	  tree new_lhs = create_tmp_var(gimple_call_return_type(stmt), "hcos_mem_result");
+	  add_referenced_var(new_lhs);
+	  new_lhs = make_ssa_name(new_lhs, stmt);
+	  
+	  gimple_call_set_lhs(stmt, new_lhs);
+	  update_stmt(stmt);
 	}
 
       addr_arg = stabilize_reference(gimple_call_lhs(stmt));
@@ -244,7 +263,7 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
       size_arg = build_int_cst(integer_type_node, 0);
     }
 
-  hook_decl = build_fn_decl(mem_func->hook_func_name, mem_hook_type);
+  hook_decl = build_fn_decl(mem_func->hook_func_name, get_mem_hook_type());
 
   /* File name and line number for this hook. */
   file_name_tree = build_string_ptr(input_filename);
@@ -496,12 +515,10 @@ static unsigned int transform_gimple()
 {
   const char *function_name;
 
-  mem_hook_type = build_function_type_list(void_type_node,
-					   ptr_type_node,  /* Address */
-					   integer_type_node,  /* Size */
-					   build_pointer_type(char_type_node),  /* File */
-					   integer_type_node,  /* Line number */
-					   NULL_TREE);
+  /* Since the last time we initialized mem_hook_type, the garbage
+     collector may have destroyed it.  Set it to NULL and whoever
+     needs it will initialize it on demand. */
+  mem_hook_type = NULL;
 
   function_name = IDENTIFIER_POINTER(DECL_NAME(current_function_decl));
 
