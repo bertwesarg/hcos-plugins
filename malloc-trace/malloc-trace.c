@@ -127,23 +127,17 @@ static tree build_string_ptr(const char* string)
   tree		string_ref;
   tree		ret;
 
-  tree		min_value;
-  tree		size_in_align;
-
   string_len = strlen(string) + 1;
 
   string_tree = build_string(string_len, string);
   TREE_TYPE(string_tree) = build_array_type(char_type_node, build_index_type(size_int(string_len)));
 
-  min_value = TYPE_MIN_VALUE(TYPE_DOMAIN(TREE_TYPE(string_tree)));
-  size_in_align = build_int_cst(size_type_node, TREE_INT_CST_LOW(TYPE_SIZE(char_type_node)) / TYPE_ALIGN(char_type_node));
-
   string_ref = build4(ARRAY_REF,
                       char_type_node,
                       string_tree,
                       build_int_cst(TYPE_DOMAIN(TREE_TYPE(string_tree)), 0),
-                      min_value,
-                      size_in_align);
+                      NULL,
+                      NULL);
 
   ret = build1(ADDR_EXPR,
                build_pointer_type(TREE_TYPE(string_ref)),
