@@ -797,6 +797,31 @@ static bool is_component_ref_ancestor(tree ancestor, tree descendant)
     return false;
 }
 
+/* If node is an SSA_NAME, make sure that it's definition comes before
+   the statement that iter points to.  If the def statement comes
+   after iter, move it to just before iter.  If it comes before iter,
+   do nothing!  Make sure that iter itself is not the defining
+   statement. */
+static void relocate_node_def(gimple_stmt_iterator *iter, tree node)
+{
+  if (TREE_CODE(node) == SSA_NAME)
+    {
+      gimple_stmt_iterator from;
+      gimple def = SSA_NAME_DEF_STMT(node);
+      gcc_assert(def != gsi_stmt(*iter));
+
+      for (from = *iter; !gsi_end_p(from) ; gsi_next(&from))
+	{
+	  if (def == gsi_stmt(from))
+	    {
+	      /* We found the def statement some place after iter.
+		 Move it, and then we're done!*/
+	      gsi_move_before(&from, iter);
+	    }
+	}
+    }
+}
+
 struct find_field_refs_args
 {
   /* The field directive that tells find_field_refs() which field
@@ -914,6 +939,10 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
 	  if (verbose)
 	    fprintf(stderr, "Found bitmask mapping at line %d.\n", input_line);
 	  bitmask_node = (*mapping)->bitmask;
+
+	  /* Make sure that bitmask_node is not defined after this statement. */
+	  relocate_node_def(iter, bitmask_node);
+
 	  bitmask_node = assign_ref_to_tmp(iter, bitmask_node, "bitmask", false);
 
 	  if ((*mapping)->invert)

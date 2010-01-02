@@ -22,7 +22,7 @@
 /* Must define an expected[] array for test-harness.h to be
    meaningful. */
 static struct expected_report expected[] = {
-  SIMPLE_WRITE(foo, i_state, 2, 87),
+  BITMASK_READ(foo, i_state, 2, 8, 51),
 };
 
 #include "test-harness.h"
@@ -55,9 +55,14 @@ __attribute__((noinline)) void test_bitmask(struct foo *foo, int bitmask)
   printf("Leaving test_bitmask.\n");
 }
 
-noinstrument void main()
+noinstrument int main()
 {
   struct foo foo;
+
+  expected_record_ptr = &foo;
+
   foo.i_state = 0xffff;
   test_bitmask(&foo, 8);
+
+  return 0;
 }
