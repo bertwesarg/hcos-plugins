@@ -797,17 +797,31 @@ static bool is_component_ref_ancestor(tree ancestor, tree descendant)
     return false;
 }
 
-/* If node is an SSA_NAME, make sure that it's definition comes before
-   the statement that iter points to.  If the def statement comes
-   after iter, move it to just before iter.  If it comes before iter,
-   do nothing!  Make sure that iter itself is not the defining
-   statement. */
+/* walk_tree() helper function that finds the first SSA_NAME in a tree. */
+static tree find_ssa_node(tree *node, int *walk_subtrees, void *args)
+{
+  if (TREE_CODE(*node) == SSA_NAME)
+    return *node;
+  else
+    return NULL;  /* Keep searching. */
+}
+
+/* If node references an SSA_NAME, make sure that it's definition
+   comes before the statement that iter points to.  If the def
+   statement comes after iter, move it to just before iter.  If it
+   comes before iter, do nothing!  Make sure that iter itself is not
+   the defining statement. */
 static void relocate_node_def(gimple_stmt_iterator *iter, tree node)
 {
-  if (TREE_CODE(node) == SSA_NAME)
+  tree ssa_name;
+
+  /* Find an SSA name referenced by this node. */
+  ssa_name = walk_tree(&node, find_ssa_node, NULL, NULL);
+
+  if (ssa_name != NULL)
     {
       gimple_stmt_iterator from;
-      gimple def = SSA_NAME_DEF_STMT(node);
+      gimple def = SSA_NAME_DEF_STMT(ssa_name);
       gcc_assert(def != gsi_stmt(*iter));
 
       for (from = *iter; !gsi_end_p(from) ; gsi_next(&from))
@@ -817,6 +831,7 @@ static void relocate_node_def(gimple_stmt_iterator *iter, tree node)
 	      /* We found the def statement some place after iter.
 		 Move it, and then we're done!*/
 	      gsi_move_before(&from, iter);
+	      return;
 	    }
 	}
     }
