@@ -377,10 +377,15 @@ static tree build_static(tree type, const char* name, tree initial)
 
 /* Create a GIMPLE statement assigning a reference to a temporary
    variable, add that statement at the iterator gsi, then return the
-   temporary variable.\
+   temporary variable.
+
    If not is true, the assignment also inverts the ref (i.e., the ~
-   operator in C). */
-static tree assign_ref_to_tmp(gimple_stmt_iterator *gsi, tree ref, const char *tmp_prefix, bool not)
+   operator in C). 
+
+   If assign_out is not NULL, it is an out parameter that returns the
+   gimple statement that assigns the temp. */
+static tree assign_ref_to_tmp(gimple_stmt_iterator *gsi, tree ref, const char *tmp_prefix,
+			      bool not, gimple *assign_out)
 {
   tree tmp = create_tmp_var(TREE_TYPE(ref), tmp_prefix);
 
@@ -397,6 +402,8 @@ static tree assign_ref_to_tmp(gimple_stmt_iterator *gsi, tree ref, const char *t
 
   gsi_insert_before(gsi, assign_stmt, GSI_SAME_STMT);
 
+  if (assign_out != NULL)
+    *assign_out = assign_stmt;
   return gimple_assign_lhs(assign_stmt);
 }
 
@@ -797,41 +804,53 @@ static bool is_component_ref_ancestor(tree ancestor, tree descendant)
     return false;
 }
 
-/* walk_tree() helper function that finds the first SSA_NAME in a tree. */
-static tree find_ssa_node(tree *node, int *walk_subtrees, void *args)
+/* relocate_ssa_defs() takes a statement that may use operands whose
+   definitions occur later in the basic block.  It finds those
+   definitions and relocates them to occur befor iter.
+
+   If relocation a definition statement causes it to occur before one
+   if its definitions, relocate_ssa_defs() will recurisvely relocate
+   those definitions as well. */
+static void relocate_ssa_defs(basic_block bb, gimple stmt)
 {
-  if (TREE_CODE(*node) == SSA_NAME)
-    return *node;
-  else
-    return NULL;  /* Keep searching. */
-}
+  ssa_op_iter ssa_iter;
+  use_operand_p use_p;
 
-/* If node references an SSA_NAME, make sure that it's definition
-   comes before the statement that iter points to.  If the def
-   statement comes after iter, move it to just before iter.  If it
-   comes before iter, do nothing!  Make sure that iter itself is not
-   the defining statement. */
-static void relocate_node_def(gimple_stmt_iterator *iter, tree node)
-{
-  tree ssa_name;
-
-  /* Find an SSA name referenced by this node. */
-  ssa_name = walk_tree(&node, find_ssa_node, NULL, NULL);
-
-  if (ssa_name != NULL)
+  FOR_EACH_SSA_USE_OPERAND(use_p, stmt, ssa_iter, SSA_OP_USE | SSA_OP_VUSE)
     {
+      tree ssa_name;
+      gimple def;
       gimple_stmt_iterator from;
-      gimple def = SSA_NAME_DEF_STMT(ssa_name);
-      gcc_assert(def != gsi_stmt(*iter));
+      gimple_stmt_iterator to;
 
-      for (from = *iter; !gsi_end_p(from) ; gsi_next(&from))
+      /* Get the iterator for this statement.  We have to do it this
+	 way because every time we move statements around, we
+	 invalidate iterators. */
+      for (from = gsi_start_bb(bb) ; gsi_stmt(from) != stmt ; gsi_next(&from))
+	gcc_assert(!gsi_end_p(from));
+      to = from;
+
+      ssa_name = USE_FROM_PTR(use_p);
+      def = SSA_NAME_DEF_STMT(ssa_name);
+
+      /* Search forward in this basic block looking for this SSA
+	 variable's definition.  If we find it, relocate it to before
+	 this statement! */
+      gsi_next(&from);
+      for (/* from = to + 1 */ ; !gsi_end_p(from) ; gsi_next(&from))
 	{
 	  if (def == gsi_stmt(from))
 	    {
-	      /* We found the def statement some place after iter.
-		 Move it, and then we're done!*/
-	      gsi_move_before(&from, iter);
-	      return;
+	      /* We found the def statement some place after stmt.
+		 Move it. */
+	      gcc_assert(!gimple_has_side_effects(stmt));
+	      gsi_move_before(&from, &to);
+
+	      /* We may have moved the statement def so that one if
+		 its SSA variable operands precedes its definition.
+		 Recursively relocate its defs. */
+	      relocate_ssa_defs(bb, def);
+	      break;
 	    }
 	}
     }
@@ -951,17 +970,19 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
 	(struct bitmask_mapping **)htab_find_slot(args->comp_ref_bitmasks, *node, NO_INSERT);
       if (mapping != NULL && (*mapping)->bitmask != NULL)
 	{
+	  gimple bitmask_assign;
+
 	  if (verbose)
 	    fprintf(stderr, "Found bitmask mapping at line %d.\n", input_line);
 	  bitmask_node = (*mapping)->bitmask;
 
-	  /* Make sure that bitmask_node is not defined after this statement. */
-	  relocate_node_def(iter, bitmask_node);
+	  bitmask_node = assign_ref_to_tmp(iter, bitmask_node, "bitmask", false, &bitmask_assign);
 
-	  bitmask_node = assign_ref_to_tmp(iter, bitmask_node, "bitmask", false);
+	  /* Make sure that bitmask_node is not defined after this statement! */
+	  relocate_ssa_defs(gsi_bb(*iter), bitmask_assign);
 
 	  if ((*mapping)->invert)
-	    bitmask_node = assign_ref_to_tmp(iter, bitmask_node, "inv_bitmask", true);
+	    bitmask_node = assign_ref_to_tmp(iter, bitmask_node, "inv_bitmask", true, NULL);
 	}
       else
 	{
@@ -979,7 +1000,7 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
       tree func_name_tree = build_string_ptr(input_filename);
       tree line_num_tree = build_int_cst(integer_type_node, input_line);
 
-      record_addr = assign_ref_to_tmp(iter, record_addr, "record_addr", false);
+      record_addr = assign_ref_to_tmp(iter, record_addr, "record_addr", false, NULL);
       hook_call = gimple_build_call(hook_func_decl, 10,
 				    record_addr,
 				    record_name_ptr,
