@@ -382,6 +382,10 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
 	 more than one place. */
       else if (gimple_code(def_stmt) == GIMPLE_PHI)
 	return;
+      /* Can't determine a lock owner if the lock is the result of a
+	 function call. */
+      else if (gimple_code(def_stmt) == GIMPLE_CALL)
+	return;
 
       gcc_assert(gimple_code(def_stmt) == GIMPLE_ASSIGN);
       lock = gimple_assign_rhs1(SSA_NAME_DEF_STMT(lock));
