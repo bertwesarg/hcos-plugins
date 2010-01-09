@@ -641,6 +641,10 @@ static void get_bitmasks(basic_block bb, htab_t comp_ref_bitmasks)
 
       tree source;
       tree bitmask;
+      tree source_left;
+      tree source_right;
+      source_left = trace_source(gsi, left);
+      source_right = trace_source(gsi, right);
       if (TREE_CODE(left) == COMPONENT_REF)
 	{
 	  source = left;
@@ -651,12 +655,12 @@ static void get_bitmasks(basic_block bb, htab_t comp_ref_bitmasks)
 	  source = right;
 	  bitmask = left;
 	}
-      else if (TREE_CODE(left) == VAR_DECL || TREE_CODE(left) == SSA_NAME)
+      else if (source_left != NULL && TREE_CODE(source_left) == COMPONENT_REF)
 	{
 	  source = left;
 	  bitmask = right;
 	}
-      else if (TREE_CODE(right) == VAR_DECL || TREE_CODE(right) == SSA_NAME)
+      else if (source_right != NULL && TREE_CODE(source_right) == COMPONENT_REF)
 	{
 	  source = right;
 	  bitmask = left;
@@ -693,7 +697,6 @@ static void get_bitmasks(basic_block bb, htab_t comp_ref_bitmasks)
 
 	  if (verbose && dest != NULL)
 	    fprintf(stderr, "Found bitmask destination: %p.\n", dest);
-
 
 	  if (dest != NULL && source_and_dest_match(source, dest))
 	    {
@@ -804,6 +807,67 @@ static bool is_component_ref_ancestor(tree ancestor, tree descendant)
     return false;
 }
 
+/* This is a cheap hack: iterate through a basic block to find a valid
+   iterator that points to the given statement.  This way, you can
+   make an invalid iterator valid once again. */
+static gimple_stmt_iterator revalidate_iterator(basic_block bb, gimple stmt)
+{
+  gimple_stmt_iterator gsi;
+
+  gcc_assert(!gsi_end_p(gsi_start_bb(bb)));
+  for (gsi = gsi_start_bb(bb) ; gsi_stmt(gsi) != stmt ; gsi_next(&gsi))
+    gcc_assert(!gsi_end_p(gsi));
+
+  return gsi;
+}
+
+// walk tree() helper that finds the first SSA_NAME in a tree node.
+static tree find_ssa_name(tree *node, int *walk_subtrees, void *data)
+{
+  if (TREE_CODE(*node) == SSA_NAME)
+    return *node;
+  else
+    return NULL;
+}
+
+static bool use_depends_on_stmt(gimple use, gimple stmt)
+{
+  ssa_op_iter ssa_iter;
+  use_operand_p use_p;
+
+  if (use == stmt)
+    return true;
+
+  FOR_EACH_SSA_USE_OPERAND(use_p, use, ssa_iter, SSA_OP_USE | SSA_OP_VUSE)
+    {
+      tree ssa_name;
+      gimple def;
+
+      ssa_name = USE_FROM_PTR(use_p);
+      def = SSA_NAME_DEF_STMT(ssa_name);
+
+      if (use_depends_on_stmt(def, stmt))
+	return true;
+    }
+
+  return false;
+}
+
+/* If node has an SSA_NAME that is computed from stmt, return true.
+   This function searches recursively and will search back through
+   all the statements that somehow compute node. */
+static bool node_depends_on_stmt(tree node, gimple stmt)
+{
+  tree ssa_name;
+
+  ssa_name = walk_tree(&node, find_ssa_name, NULL, NULL);
+
+  if (ssa_name != NULL)
+    return use_depends_on_stmt(SSA_NAME_DEF_STMT(ssa_name), stmt);
+  else
+    return false;
+}
+
 /* relocate_ssa_defs() takes a statement that may use operands whose
    definitions occur later in the basic block.  It finds those
    definitions and relocates them to occur befor iter.
@@ -826,8 +890,7 @@ static void relocate_ssa_defs(basic_block bb, gimple stmt)
       /* Get the iterator for this statement.  We have to do it this
 	 way because every time we move statements around, we
 	 invalidate iterators. */
-      for (from = gsi_start_bb(bb) ; gsi_stmt(from) != stmt ; gsi_next(&from))
-	gcc_assert(!gsi_end_p(from));
+      from = revalidate_iterator(bb, stmt);
       to = from;
 
       ssa_name = USE_FROM_PTR(use_p);
@@ -907,7 +970,7 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
   struct walk_stmt_info *wi = data;
   struct find_field_refs_args *args = wi->info;
   
-  gimple_stmt_iterator *iter = &wi->gsi;
+  gimple_stmt_iterator iter = wi->gsi;
   struct field_directive *directive = args->directive;
 
   /* Name every scratch variable with an index, so that each name is unique. */
@@ -964,25 +1027,34 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
       int is_write = (args->write_ref != NULL &&
 		      is_component_ref_ancestor(args->write_ref, *node));
 
-      /* Is this node annotated with a bitmask? */
+      /* Is this node annotated with a bitmask? 
+	 NB: If the bitmask is actually computed from the field
+	 access, we don't want to try to pass it to the hook. */
       tree bitmask_node;
       struct bitmask_mapping **mapping =
 	(struct bitmask_mapping **)htab_find_slot(args->comp_ref_bitmasks, *node, NO_INSERT);
-      if (mapping != NULL && (*mapping)->bitmask != NULL)
+      if (mapping != NULL && (*mapping)->bitmask != NULL &&
+	  !node_depends_on_stmt((*mapping)->bitmask, gsi_stmt(iter)))
 	{
+	  basic_block iter_bb;
+	  gimple iter_stmt;
 	  gimple bitmask_assign;
 
 	  if (verbose)
 	    fprintf(stderr, "Found bitmask mapping at line %d.\n", input_line);
 	  bitmask_node = (*mapping)->bitmask;
 
-	  bitmask_node = assign_ref_to_tmp(iter, bitmask_node, "bitmask", false, &bitmask_assign);
+	  bitmask_node = assign_ref_to_tmp(&iter, bitmask_node, "bitmask", false, &bitmask_assign);
 
-	  /* Make sure that bitmask_node is not defined after this statement! */
-	  relocate_ssa_defs(gsi_bb(*iter), bitmask_assign);
+	  /* Make sure that bitmask_node is not defined after this statement!
+	     NB: relocate_ssa_defs invalides your iterators! */
+	  iter_bb = gsi_bb(iter);
+	  iter_stmt = gsi_stmt(iter);
+	  relocate_ssa_defs(gsi_bb(iter), bitmask_assign);
+	  iter = revalidate_iterator(iter_bb, iter_stmt);
 
 	  if ((*mapping)->invert)
-	    bitmask_node = assign_ref_to_tmp(iter, bitmask_node, "inv_bitmask", true, NULL);
+	    bitmask_node = assign_ref_to_tmp(&iter, bitmask_node, "inv_bitmask", true, NULL);
 	}
       else
 	{
@@ -1000,7 +1072,7 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
       tree func_name_tree = build_string_ptr(input_filename);
       tree line_num_tree = build_int_cst(integer_type_node, input_line);
 
-      record_addr = assign_ref_to_tmp(iter, record_addr, "record_addr", false, NULL);
+      record_addr = assign_ref_to_tmp(&iter, record_addr, "record_addr", false, NULL);
       hook_call = gimple_build_call(hook_func_decl, 10,
 				    record_addr,
 				    record_name_ptr,
@@ -1012,7 +1084,7 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
 				    scratch_addr,
 				    func_name_tree,
 				    line_num_tree);
-      gsi_insert_before(iter, hook_call, GSI_SAME_STMT);
+      gsi_insert_before(&iter, hook_call, GSI_SAME_STMT);
 
 #ifdef DEBUG
       fprintf(stderr, "Inserted hook at line %d\n", input_line);
