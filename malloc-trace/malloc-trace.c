@@ -82,6 +82,7 @@ static tree mem_hook_type = NULL;
 
 enum function_semantics {
   KMALLOC,
+  KMEM,
   KMAP,
   KUNMAP,
 };
@@ -182,6 +183,30 @@ struct mem_func_desc *get_mem_func_desc(tree func)
   return NULL;
 }
 
+/* Create a GIMPLE statement assigning a reference to a temporary
+   variable, add that statement at the iterator gsi, then return the
+   temporary variable.
+
+   The assignment has a NOP cast. */
+static tree assign_to_tmp_with_cast(gimple_stmt_iterator *gsi, tree ref, tree cast_type,
+				    const char *tmp_prefix)
+{
+  tree tmp = create_tmp_var(cast_type, tmp_prefix);
+
+  /* Construct an assign statement: tmp = ref; */
+  gimple assign_stmt = gimple_build_assign(tmp, ref);
+  gimple_assign_set_rhs_code(assign_stmt, NOP_EXPR);
+
+  /* The left side of the assignment should be an SSA_NAME, but we
+     can't create the SSA_NAME until after we build the assign
+     statement. */
+  gimple_assign_set_lhs(assign_stmt, make_ssa_name(tmp, assign_stmt));
+
+  gsi_insert_before(gsi, assign_stmt, GSI_SAME_STMT);
+
+  return gimple_assign_lhs(assign_stmt);
+}
+
 static void instrument_function_call(gimple_stmt_iterator *gsi)
 {
   struct mem_func_desc *mem_func;
@@ -208,7 +233,7 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
   /* TODO: Make sure we are allocating an object that we care about. */
 
   /* What is the allocation address argument? */
-  if (mem_func->semantics == KMALLOC || mem_func->semantics == KMAP)
+  if (mem_func->semantics == KMALLOC || mem_func->semantics == KMAP || mem_func->semantics == KMEM)
     {
       /* If this function isn't on the right side of an assignment, we
 	 need to _put it_ on the right hand side of an assignment so
@@ -241,15 +266,21 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
     }
 
   /* What is the allocation size argument? */
-  if (mem_func->semantics == KMALLOC)
+  if (mem_func->semantics == KMALLOC || mem_func->semantics == KMEM)
     {
       if (gimple_call_num_args(stmt) < 1)
 	{
-	  error("(Malloc Trace) Call to a MALLOC-style function with no size argument.\n");
+	  error("(Malloc Trace) Call to a MALLOC- or KMEM-style function with no size argument.\n");
 	  return;
 	}
 
       size_arg = stabilize_reference(gimple_call_arg(stmt, 0));
+      if (mem_func->semantics == KMALLOC)  /* (int) cast */
+	size_arg = assign_to_tmp_with_cast(gsi, size_arg, integer_type_node, "size_arg");
+      else if (mem_func->semantics == KMEM)  /* (void *) cast */
+	size_arg = assign_to_tmp_with_cast(gsi, size_arg, ptr_type_node, "size_arg");
+      else
+	gcc_unreachable();
     }
   else
     {
@@ -274,10 +305,12 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
      interested in the argument to an MUNMAP-style call, which might
      no longer be valid after the call.  These calls have their hook
      before the call. */
-  if (mem_func->semantics == KMALLOC || mem_func->semantics == KMAP)
+  if (mem_func->semantics == KMALLOC || mem_func->semantics == KMAP || mem_func->semantics == KMEM)
     gsi_insert_after(gsi, hook_call, GSI_SAME_STMT);
   else if (mem_func->semantics == KUNMAP )
     gsi_insert_before(gsi, hook_call, GSI_SAME_STMT);
+  else
+    gcc_unreachable();
 }
 
 /* This function does the actual instrumentation work for the current
@@ -357,6 +390,8 @@ static void parse_mem_func_desc(const char *desc_string)
      mem_func_desc structs. */
   if (strcmp(fields[1], "kmalloc") == 0)
     desc.semantics = KMALLOC;
+  else if (strcmp(fields[1], "kmem") == 0)
+    desc.semantics = KMEM;
   else if (strcmp(fields[1], "kmap") == 0)
     desc.semantics = KMAP;
   else if (strcmp(fields[1], "kunmap") == 0)
