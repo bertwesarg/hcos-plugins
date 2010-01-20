@@ -15,7 +15,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-
 #include "test-harness-preamble.h"
 
 /* Must define an expected[] array for test-harness.h to be
@@ -44,7 +43,8 @@ noinstrument void __report_field_access(void *record_ptr, const char *record,
 					const char *field, int field_index,
 					int is_write, int is_marked,
 					unsigned long bitmask, int *scratch,
-					const char *filename, int lineno)
+					const char *filename, int lineno,
+					int index)
 {
   int value = ((struct foo *)record_ptr)->field1;
   printf("At %s:%d\n", filename, lineno);

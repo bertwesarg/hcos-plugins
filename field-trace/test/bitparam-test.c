@@ -10,8 +10,7 @@
 
    Statement 1 tries to use the definition in statement 5, which is
    out of order.  We need to move statement 5 up to be before
-   statement 1!
- */
+   statement 1! */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,7 +36,8 @@ noinstrument void __report_field_access(void *record_ptr, const char *record,
 					const char *field, int field_index,
 					int is_write, int is_marked,
 					unsigned long bitmask, int *scratch,
-					const char *filename, int lineno)
+					const char *filename, int lineno,
+					int index)
 {
   printf("Struct %s with bitmask: 0x%08lx\n", (is_write ? "assign" : "access"),
 	 bitmask);

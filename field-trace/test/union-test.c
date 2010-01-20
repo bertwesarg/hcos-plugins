@@ -36,7 +36,7 @@ noinstrument void __report_field_access(void *record_ptr, const char *record,
 					const char *field, int field_index,
 					int is_write, int is_marked,
 					unsigned long bitmask, int *scratch,
-					const char *filename, int lineno)
+					const char *filename, int lineno, int index)
 {
   printf("%s reported, field %s (index %d)\n", (is_write ? "Write" : "Read"),
 	 field, field_index);
