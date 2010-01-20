@@ -107,7 +107,7 @@ static tree get_field_hook_type()
        * void __report_field_access(void *record_ptr, const char *record, const char *field,
        *                            int field_index, int is_write, int is_marked,
        *                            unsigned long bitmask, int *scratch, const char *filename,
-       *                            int lineno);
+       *                            int lineno, int index);
        */
       field_hook_type = build_function_type_list(void_type_node,
 						 build_pointer_type(char_type_node),
@@ -120,6 +120,7 @@ static tree get_field_hook_type()
 						 build_pointer_type(integer_type_node),
 						 build_pointer_type(char_type_node), /*File name*/
 						 integer_type_node, /* Line number */
+						 integer_type_node, /* Index */
 						 NULL_TREE);
     }
 
@@ -1072,8 +1073,12 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
       tree func_name_tree = build_string_ptr(input_filename);
       tree line_num_tree = build_int_cst(integer_type_node, input_line);
 
+      /* Each hook gets a unique index. */
+      static int access_index = 0;
+      tree index_tree = build_int_cst(integer_type_node, access_index++);
+
       record_addr = assign_ref_to_tmp(&iter, record_addr, "record_addr", false, NULL);
-      hook_call = gimple_build_call(hook_func_decl, 10,
+      hook_call = gimple_build_call(hook_func_decl, 11,
 				    record_addr,
 				    record_name_ptr,
 				    field_name_ptr,
@@ -1083,7 +1088,8 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
 				    bitmask_node,
 				    scratch_addr,
 				    func_name_tree,
-				    line_num_tree);
+				    line_num_tree,
+				    index_tree);
       gsi_insert_before(&iter, hook_call, GSI_SAME_STMT);
 
 #ifdef DEBUG
