@@ -90,6 +90,7 @@ typedef struct field_directive
   char *field_name;
 
   char *hook_func_name;
+  int struct_index;
 } field_directive;
 
 DEF_VEC_O(field_directive);
@@ -1076,9 +1077,10 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
       /* Each hook gets a unique index. */
       static int access_index = 0;
       tree index_tree = build_int_cst(integer_type_node, access_index++);
+      tree struct_index_tree = build_int_cst(integer_type_node, directive->struct_index);
 
       record_addr = assign_ref_to_tmp(&iter, record_addr, "record_addr", false, NULL);
-      hook_call = gimple_build_call(hook_func_decl, 11,
+      hook_call = gimple_build_call(hook_func_decl, 12,
 				    record_addr,
 				    record_name_ptr,
 				    field_name_ptr,
@@ -1089,7 +1091,8 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
 				    scratch_addr,
 				    func_name_tree,
 				    line_num_tree,
-				    index_tree);
+				    index_tree,
+            struct_index_tree);
       gsi_insert_before(&iter, hook_call, GSI_SAME_STMT);
 
 #ifdef DEBUG
@@ -1115,7 +1118,7 @@ void parse_field_directive(const char *directive_string)
   const char *str_end;
   int str_size;
   int i;
-
+  static int struct_index = 0;
   struct field_directive directive;
 
   /* The first two arguments in the directive are terminated with a -.
@@ -1170,6 +1173,7 @@ void parse_field_directive(const char *directive_string)
   directive.struct_name = args[0];
   directive.field_name = args[1];
   directive.hook_func_name = args[2];
+  directive.struct_index = struct_index++;
   VEC_safe_push(field_directive, heap, field_directive_vec, &directive);
 
   if (verbose)
