@@ -83,7 +83,8 @@ enum locking_semantics {
   LS_NOT_LOCK,
   LS_ACQUIRE,
   LS_TRY,
-  LS_RELEASE
+  LS_RELEASE,
+  LS_ATOMIC_DEC_LOCK
 };
 
 /* We store a list of locking functions.  Each function can be a lock
@@ -356,6 +357,11 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
      the lock and its owner. */
   if (gimple_call_num_args(stmt) < 1)
     error("(Lock Trace) Call to locking function with no arguments");
+  if(lock_func->semantics == LS_ATOMIC_DEC_LOCK) {
+  lock = gimple_call_arg(stmt, 1);
+  fprintf(stderr,"found atomic_dec_lock\n");
+  }
+  else
   lock = gimple_call_arg(stmt, 0);
 
   /* Sometimes an argument gets assigned to an SSA temporary variable
@@ -429,7 +435,7 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
 
   /* If this is an LS_TRY lock function, we need a reference to the
      function's return value.*/
-  if (lock_func->semantics == LS_TRY)
+  if (lock_func->semantics == LS_TRY||lock_func->semantics == LS_ATOMIC_DEC_LOCK)
     {
       /* If this function isn't on the right side of an assignment,
 	 somebody screwed up bad.  We have no way to pass the result
@@ -470,7 +476,8 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
 
   /* We want to call the hook function with the lock held, so add it
      just after acquiring or just before releasing. */
-  if (lock_func->semantics == LS_ACQUIRE || lock_func->semantics == LS_TRY)
+  if (lock_func->semantics == LS_ACQUIRE || lock_func->semantics == LS_TRY|| 
+      lock_func->semantics==LS_ATOMIC_DEC_LOCK)
     gsi_insert_after(gsi, hook_call, GSI_SAME_STMT);
   else if (lock_func->semantics == LS_RELEASE)
     gsi_insert_before(gsi, hook_call, GSI_SAME_STMT);
@@ -563,6 +570,8 @@ static void parse_lock_func_desc(const char *desc_string)
   desc.name = xstrdup(fields[0]);
   if (strcmp(fields[1], "acquire") == 0)
     desc.semantics = LS_ACQUIRE;
+  else if (strcmp(fields[1], "atomic_dec_lock") == 0)
+    desc.semantics = LS_ATOMIC_DEC_LOCK;
   else if (strcmp(fields[1], "try") == 0)
     desc.semantics = LS_TRY;
   else if (strcmp(fields[1], "release") == 0)

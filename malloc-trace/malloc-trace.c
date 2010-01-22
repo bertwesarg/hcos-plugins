@@ -247,7 +247,6 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
 	  gimple_call_set_lhs(stmt, new_lhs);
 	  update_stmt(stmt);
 	}
-
       addr_arg = stabilize_reference(gimple_call_lhs(stmt));
     }
   else if (mem_func->semantics == KUNMAP)
