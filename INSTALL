@@ -46,12 +46,12 @@ cd $PLUGIN_BASE/build-svn
 ../gcc-svn/configure --prefix=$PLUGIN_BASE/install-svn           \
   		     --enable-languages=c,c++
 
-# Also optional is the CFLAGS specification.  If you intend to develop
-# plug-ins, you may find it useful to build GCC with debugging turned
-# on.  Otherwise, omit these CFLAGS for a significantly faster
-# compiler.
+# Also optional is the STAGE_CFLAGS specification.  If you intend to
+# develop plug-ins, you may find it useful to build GCC with debugging
+# turned on.  Otherwise, omit these STAGE_CFLAGS for a significantly
+# faster compiler.
 # This process will take several hours on some machines.
-make CFLAGS='-g -O0'
+make STAGE_CFLAGS='-g -O0'
 make install
 
 ---
@@ -67,10 +67,10 @@ dependencies.  If you have a problem with either libgmp or libmpfr,
 download the most recent source tarballs for both packages and untar
 them directly into the GCC source directory ($PLUGIN_BASE/gcc-svn/).
 
-Rename the two directories to libgmp and libmpfr (removing the version
-numbers from their directory names), and the GCC build process will
-automatically roll these packages into your compilation.  You do not
-need to specify any extra options!
+Rename the two directories to gmp and mpfr (removing the "lib" prefix
+and version numbers from their directory names), and the GCC build
+process will automatically roll these packages into your compilation.
+You do not need to specify any extra options!
 
 --------
 3. Building the HCOS plug-ins
