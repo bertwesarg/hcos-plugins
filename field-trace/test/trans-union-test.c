@@ -16,18 +16,18 @@
 /* Must define an expected[] array for test-harness.h to be
    meaningful. */
 static struct expected_report expected[] = {
-  SIMPLE_WRITE(foo, a, 0, 77),
-  SIMPLE_WRITE(foo, b, 1, 78),
-  SIMPLE_WRITE(foo, c, 2, 79),
-  SIMPLE_WRITE(foo, d, 3, 80),
-  SIMPLE_WRITE(foo, e, 4, 81),
-  SIMPLE_WRITE(foo, f, 5, 82),
-  SIMPLE_READ(foo, a, 0, 64),
-  SIMPLE_READ(foo, b, 1, 65),
-  SIMPLE_READ(foo, c, 2, 66),
-  SIMPLE_READ(foo, d, 3, 67),
-  SIMPLE_READ(foo, e, 4, 68),
-  SIMPLE_READ(foo, f, 5, 69),
+  SIMPLE_WRITE(foo, a, 0, 78),
+  SIMPLE_WRITE(foo, b, 1, 79),
+  SIMPLE_WRITE(foo, c, 2, 80),
+  SIMPLE_WRITE(foo, d, 3, 81),
+  SIMPLE_WRITE(foo, e, 4, 82),
+  SIMPLE_WRITE(foo, f, 5, 83),
+  SIMPLE_READ(foo, a, 0, 65),
+  SIMPLE_READ(foo, b, 1, 66),
+  SIMPLE_READ(foo, c, 2, 67),
+  SIMPLE_READ(foo, d, 3, 68),
+  SIMPLE_READ(foo, e, 4, 69),
+  SIMPLE_READ(foo, f, 5, 70),
 };
 
 #include "test-harness.h"
@@ -51,7 +51,8 @@ noinstrument void __report_field_access(void *record_ptr, const char *record,
 					const char *field, int field_index,
 					int is_write, int is_marked,
 					unsigned long bitmask, int *scratch,
-					const char *filename, int lineno, int index)
+					const char *filename, int lineno,
+					int index, int struct_index)
 {
   printf("%s reported, field %s (index %d)\n", (is_write ? "Write" : "Read"), field, field_index);
 

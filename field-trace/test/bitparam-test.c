@@ -37,7 +37,7 @@ noinstrument void __report_field_access(void *record_ptr, const char *record,
 					int is_write, int is_marked,
 					unsigned long bitmask, int *scratch,
 					const char *filename, int lineno,
-					int index)
+					int index, int struct_index)
 {
   printf("Struct %s with bitmask: 0x%08lx\n", (is_write ? "assign" : "access"),
 	 bitmask);

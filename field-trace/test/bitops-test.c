@@ -52,14 +52,14 @@ extern void test_bitmask();
 /* Must define an expected[] array for test-harness.h to be
    meaningful. */
 static struct expected_report expected[] = {
-  SIMPLE_WRITE(foo, i_state, 2, 87),
-  BITMASK_READ(foo, i_state, 2, I_DIRTY, 90),
-  INERT_READ(foo, i_state, 2, 94),
-  BITMASK_WRITE(foo, i_state, 2, I_FREEING, 94),
-  BITMASK_READ(foo, i_state, 2, (I_DIRTY|I_SYNC), 97),
-  INERT_READ(foo, i_state, 2, 101),
-  BITMASK_WRITE(foo, i_state, 2, (I_LOCK|I_NEW), 101),
-  BITMASK_READ(foo, i_state, 2, I_FREEING, 107),
+  SIMPLE_WRITE(foo, i_state, 2, 88),
+  BITMASK_READ(foo, i_state, 2, I_DIRTY, 91),
+  INERT_READ(foo, i_state, 2, 95),
+  BITMASK_WRITE(foo, i_state, 2, I_FREEING, 95),
+  BITMASK_READ(foo, i_state, 2, (I_DIRTY|I_SYNC), 98),
+  INERT_READ(foo, i_state, 2, 102),
+  BITMASK_WRITE(foo, i_state, 2, (I_LOCK|I_NEW), 102),
+  BITMASK_READ(foo, i_state, 2, I_FREEING, 108),
 };
 
 #include "test-harness.h"
@@ -70,7 +70,8 @@ noinstrument void __report_field_access(void *record_ptr, const char *record,
 					const char *field, int field_index,
 					int is_write, int is_marked,
 					unsigned long bitmask, int *scratch,
-					const char *filename, int lineno, int index)
+					const char *filename, int lineno,
+					int index, int struct_index)
 {
   printf("Struct %s with bitmask: 0x%08lx\n", (is_write ? "assign" : "access"),
 	 bitmask);
