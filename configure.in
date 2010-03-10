@@ -42,6 +42,8 @@ AC_CONFIG_FILES([Makefile
                  entryexit-trace/Makefile
                  entryexit-trace/test/Makefile
                  malloc-trace/Makefile
-                 malloc-trace/test/Makefile])
+                 malloc-trace/test/Makefile
+		 assign-trace/Makefile
+		 assign-trace/test/Makefile])
 
 AC_OUTPUT
