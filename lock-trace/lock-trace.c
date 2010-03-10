@@ -22,6 +22,7 @@
 #define _GNU_SOURCE
 
 #include <inttypes.h>
+#include <locale.h>
 
 /* Whether we want them or not (we don't), Autoconf _insists_ on
    defining these.  Since GCC's config.h (which we must include) also

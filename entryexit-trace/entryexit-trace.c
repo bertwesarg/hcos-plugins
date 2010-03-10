@@ -28,6 +28,7 @@
 #define _GNU_SOURCE
 
 #include <inttypes.h>
+#include <locale.h>
 
 #include "config.h"
 #include "system.h"
@@ -78,8 +79,8 @@ DEF_VEC_P(func_name);
 DEF_VEC_ALLOC_P(func_name, heap);
 static VEC(func_name, heap) *func_name_vec;
 
-char *entry_hook_name = NULL;
-char *exit_hook_name = NULL;
+static char *entry_hook_name = NULL;
+static char *exit_hook_name = NULL;
 
 static tree build_string_ptr(const char* string)
 {

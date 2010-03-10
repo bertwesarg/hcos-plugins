@@ -32,6 +32,7 @@
 #define _GNU_SOURCE
 
 #include <inttypes.h>
+#include <locale.h>
 
 #include "config.h"
 #include "system.h"

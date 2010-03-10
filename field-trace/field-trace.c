@@ -30,6 +30,7 @@
 #define _GNU_SOURCE
 
 #include <inttypes.h>
+#include <locale.h>
 
 #include "config.h"
 #include "system.h"
@@ -97,7 +98,7 @@ DEF_VEC_O(field_directive);
 DEF_VEC_ALLOC_O(field_directive, heap);
 static VEC(field_directive, heap) *field_directive_vec;
 
-tree field_hook_type = NULL;
+static tree field_hook_type = NULL;
 
 static tree get_field_hook_type()
 {
