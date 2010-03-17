@@ -169,14 +169,12 @@ struct mem_func_desc *get_mem_func_desc(tree func)
   /* Get the function's name. */
   func_decl = TREE_OPERAND(func, 0);
   func_name = IDENTIFIER_POINTER(DECL_NAME(func_decl));
-
+  
   /* Look for its memory description. */
   for (i = 0 ; VEC_iterate(mem_func_desc, mem_func_vec, i, mem_func) ; i++)
     {
       if (strcmp(mem_func->name, func_name) == 0) {
-	if (verbose)
-	  fprintf(stderr, "Found memory function: %s\n", func_name);
-	return mem_func;
+	      return mem_func;
       }
     }
 
@@ -269,7 +267,8 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
     {
       if (gimple_call_num_args(stmt) < 1)
 	{
-	  error("(Malloc Trace) Call to a MALLOC- or KMEM-style function with no size argument.\n");
+	  //Abhinav:Commented bec plugin is not recognizing kzalloc(SIZE,NOFS) here size is a macro
+    //error("(Malloc Trace) Call to a MALLOC- or KMEM-style function with no size argument.\n");
 	  return;
 	}
 
@@ -304,8 +303,9 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
      interested in the argument to an MUNMAP-style call, which might
      no longer be valid after the call.  These calls have their hook
      before the call. */
-  if (mem_func->semantics == KMALLOC || mem_func->semantics == KMAP || mem_func->semantics == KMEM)
+  if (mem_func->semantics == KMALLOC || mem_func->semantics == KMAP || mem_func->semantics == KMEM) {
     gsi_insert_after(gsi, hook_call, GSI_SAME_STMT);
+  }
   else if (mem_func->semantics == KUNMAP )
     gsi_insert_before(gsi, hook_call, GSI_SAME_STMT);
   else

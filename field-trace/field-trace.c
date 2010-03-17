@@ -1073,7 +1073,6 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
       /* File name and line number for this hook. */
       tree func_name_tree = build_string_ptr(input_filename);
       tree line_num_tree = build_int_cst(integer_type_node, input_line);
-      //fprintf(stderr," %s %s %d \n",input_filename,input_line);
       /* Each hook gets a unique index. */
       static int access_index = 0;
       tree index_tree = build_int_cst(integer_type_node, access_index++);

@@ -84,7 +84,9 @@ enum locking_semantics {
   LS_ACQUIRE,
   LS_TRY,
   LS_RELEASE,
-  LS_ATOMIC_DEC_LOCK
+  LS_ATOMIC_DEC_LOCK,
+  LS_RCU_LOCK,
+  LS_RCU_UNLOCK
 };
 
 /* We store a list of locking functions.  Each function can be a lock
@@ -273,7 +275,6 @@ struct lock_func_desc *get_lock_func_desc(tree func)
   /* Get the function's name. */
   func_decl = TREE_OPERAND(func, 0);
   func_name = IDENTIFIER_POINTER(DECL_NAME(func_decl));
-
   /* Look for its lock description. */
   for (i = 0 ; VEC_iterate(lock_func_desc, lock_func_vec, i, lock_func) ; i++)
     {
@@ -350,19 +351,18 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
 
   /* Ignore functions that are not lock acquire/release functions. */
   func = gimple_call_fn(stmt);
+
   if ((lock_func = get_lock_func_desc(func)) == NULL)
     return;
-
+  if(lock_func->semantics != LS_RCU_LOCK && lock_func->semantics != LS_RCU_UNLOCK) {
   /* We are looking at a lock acquire or release function.  Figure out
      the lock and its owner. */
   if (gimple_call_num_args(stmt) < 1)
     error("(Lock Trace) Call to locking function with no arguments");
-  if(lock_func->semantics == LS_ATOMIC_DEC_LOCK) {
-  lock = gimple_call_arg(stmt, 1);
-  fprintf(stderr,"found atomic_dec_lock\n");
-  }
+  if(lock_func->semantics == LS_ATOMIC_DEC_LOCK) 
+    lock = gimple_call_arg(stmt, 1);
   else
-  lock = gimple_call_arg(stmt, 0);
+    lock = gimple_call_arg(stmt, 0);
 
   /* Sometimes an argument gets assigned to an SSA temporary variable
      before it gets passed as an argument.  We don't want that
@@ -420,7 +420,7 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
 	 about? */
       const char *lock_name_str = IDENTIFIER_POINTER(DECL_NAME(lock));
       if (!is_matching_lock_name(lock_name_str))
-	return;
+	      return;
 
       lock_owner = NULL;
       owner_name = build_int_cst(build_pointer_type(char_type_node), 0); /* NULL pointer */
@@ -455,17 +455,19 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
       lock_success = build_int_cst(integer_type_node, 1 /* 1 for true */);
     }
 
-  /* Add a hook. */
-  hook_decl = build_fn_decl(lock_func->hook_func_name, get_lock_hook_type());
   if (lock_owner != NULL)
     owner_addr = build1(ADDR_EXPR, build_pointer_type(char_type_node), stabilize_reference(lock_owner));
   else
     owner_addr = build_int_cst(build_pointer_type(char_type_node), 0); /* NULL pointer */
   lock_addr = build1(ADDR_EXPR, build_pointer_type(char_type_node), stabilize_reference(lock));
+  }
+  /* Add a hook. */
+  hook_decl = build_fn_decl(lock_func->hook_func_name, get_lock_hook_type());
+
   func_name_tree = build_string_ptr(gimple_filename(stmt));
   line_num_tree = build_int_cst(integer_type_node, gimple_lineno(stmt));
-
-  hook_call = gimple_build_call(hook_decl, 7,
+  if(lock_func->semantics != LS_RCU_LOCK && lock_func->semantics != LS_RCU_UNLOCK) {
+    hook_call = gimple_build_call(hook_decl, 7,
 				owner_addr,
 				lock_addr,
 				lock_success,
@@ -473,14 +475,24 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
 				lock_name,
 				func_name_tree,
 				line_num_tree);
-
+  }
+  else
+  {
+    hook_call = gimple_build_call(hook_decl, 2,
+				func_name_tree,
+				line_num_tree);
+  }
   /* We want to call the hook function with the lock held, so add it
      just after acquiring or just before releasing. */
   if (lock_func->semantics == LS_ACQUIRE || lock_func->semantics == LS_TRY|| 
-      lock_func->semantics==LS_ATOMIC_DEC_LOCK)
+      lock_func->semantics==LS_ATOMIC_DEC_LOCK || lock_func->semantics == LS_RCU_LOCK) {
+    
+    //fprintf(stderr," file %s %d ",gimple_filename(stmt),gimple_lineno(stmt));
     gsi_insert_after(gsi, hook_call, GSI_SAME_STMT);
-  else if (lock_func->semantics == LS_RELEASE)
+  }
+  else if (lock_func->semantics == LS_RELEASE || lock_func->semantics == LS_RCU_UNLOCK) {
     gsi_insert_before(gsi, hook_call, GSI_SAME_STMT);
+  }
   else
     gcc_assert(0);  /* This should not happen. */
 }
@@ -576,6 +588,10 @@ static void parse_lock_func_desc(const char *desc_string)
     desc.semantics = LS_TRY;
   else if (strcmp(fields[1], "release") == 0)
     desc.semantics = LS_RELEASE;
+  else if(strcmp(fields[1],"rcu_lock") == 0)
+    desc.semantics = LS_RCU_LOCK;
+  else if(strcmp(fields[1],"rcu_unlock") == 0)
+    desc.semantics = LS_RCU_UNLOCK;
   else
     {
       error("(Lock Trace) Invalid lock semantics: %s.  Specify acquire, try, or release.", fields[1]);
