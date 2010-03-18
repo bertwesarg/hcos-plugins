@@ -11,10 +11,10 @@
 /* Must define an expected[] array for test-harness.h to be
    meaningful. */
 static struct expected_report expected[] = {
-  SIMPLE_WRITE(foo, a, 0, 60),
-  SIMPLE_WRITE(foo, b, 1, 61),
-  SIMPLE_READ(foo, a, 0, 50),
-  SIMPLE_READ(foo, b, 1, 51),
+  SIMPLE_WRITE(foo, a, 0, 61),
+  SIMPLE_WRITE(foo, b, 1, 62),
+  SIMPLE_READ(foo, a, 0, 51),
+  SIMPLE_READ(foo, b, 1, 52),
 };
 
 #include "test-harness.h"
@@ -36,7 +36,8 @@ noinstrument void __report_field_access(void *record_ptr, const char *record,
 					const char *field, int field_index,
 					int is_write, int is_marked,
 					unsigned long bitmask, int *scratch,
-					const char *filename, int lineno, int index)
+					const char *filename, int lineno,
+					int index, int struct_index)
 {
   printf("%s reported, field %s (index %d)\n", (is_write ? "Write" : "Read"),
 	 field, field_index);
