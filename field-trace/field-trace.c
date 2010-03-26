@@ -61,7 +61,7 @@
 int plugin_is_GPL_compatible;
 
 //#define DEBUG
-#define PAUSE_ON_START
+//#define PAUSE_ON_START
 
 #define NOINSTRUMENT_ATTR "hcos_noinstrument"
 #define MARKED_ATTR "hcos_marked"
