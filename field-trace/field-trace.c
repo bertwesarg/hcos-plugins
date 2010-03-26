@@ -175,13 +175,19 @@ static tree get_type_identifier(tree type)
   return type_name;
 }
 
+/* Return true if type is a struct or union type node. */
+static bool is_aggregate_type(tree type)
+{
+  return (TREE_CODE(type) == RECORD_TYPE || TREE_CODE(type) == UNION_TYPE);
+}
+
 /* Given a component ref, get the node for the left side of the ref.
    For example, in the case of a->b, get the node for a.  In almost
    all cases, that just means the left operand.  However, there is a
-   trick case: if b is a member of a transparent union, the left
-   operand of the expression is actually the hidden union reference.
-   In this case, get_record keeps() traversing to the left to find the
-   real record node. */
+   trick case: if b is a member of a transparent struct or union, the
+   left operand of the expression is actually the hidden struct or
+   union reference.  In this case, get_record keeps() traversing to
+   the left to find the real record node. */
 static tree get_record(tree node)
 {
   tree record;
@@ -191,12 +197,12 @@ static tree get_record(tree node)
   record = TREE_OPERAND(node, 0);
 
   while (TREE_CODE(record) == COMPONENT_REF &&
-	 TREE_CODE(TREE_TYPE(record)) == UNION_TYPE &&
+	 is_aggregate_type(TREE_TYPE(record)) &&
 	 DECL_NAME(TREE_OPERAND(record, 1)) == NULL)
     {
-      /* The record node is a field access to a union with no name: a
-	 transparent union access.  Traverse down the left until we
-	 find an honest-to-goodness named struct or union. */
+      /* The record node is a field access to a struct or union with
+	 no name: a transparent access.  Traverse down the left until
+	 we find an honest-to-goodness named struct or union. */
       record = TREE_OPERAND(record, 0);
     }
 
@@ -274,9 +280,9 @@ static int num_fields(tree node)
   /* Inefficient, but it should be acceptable. */
   while (field != NULL)
     {
-      if (DECL_NAME(field) != NULL || TREE_CODE(TREE_TYPE(field)) != UNION_TYPE)
+      if (DECL_NAME(field) != NULL || !is_aggregate_type(TREE_TYPE(field)))
 	num++;  /* Count this as a regular field. */
-      else  /* This field is a transparent union.  Count its fields as fields of this type. */
+      else  /* This field is a transparent struct/union. Count its fields as fields of this type. */
 	num += num_fields(TREE_TYPE(field));
       field = TREE_CHAIN(field);
     }
@@ -306,7 +312,7 @@ static int get_field_index_iterate(tree record_type, const char *field_name)
 
 	  field_index++;
 	}
-      else if (TREE_CODE(TREE_TYPE(field)) == UNION_TYPE)
+      else if (is_aggregate_type(TREE_TYPE(field)))
 	{
 	  /* This field is a transparent union.  This union has no
 	     name, but its fields are accessible as if they are the
