@@ -66,6 +66,15 @@ int plugin_is_GPL_compatible;
 #define NOINSTRUMENT_ATTR "hcos_noinstrument"
 #define MARKED_ATTR "hcos_marked"
 
+/* Flags that can be passed to the hook function. */
+#define FIELD_FLAG_MARKED 0x1
+
+/* True for bitmasked operations that always set bits to 1. */
+#define FIELD_FLAG_SET 0x2
+
+/* True for bitmasked operations that always clear bits to 0. */
+#define FIELD_FLAG_CLEAR 0x4
+
 /* Print some potentially useful info when verbose is true.  When
    DEBUG is off, use the verbose=true option in the plugin args to
    turn verbose mode on. */
@@ -433,6 +442,10 @@ struct bitmask_mapping {
   tree key;
   tree bitmask;
   bool invert;
+
+  /* These flags (with get passed with the hook flags) indicate if the
+     operation is a set or a clear. */
+  int flags;
 };
 
 static hashval_t hash_bitmask_mapping(const void *key)
@@ -575,12 +588,13 @@ static bool source_and_dest_match(tree source, tree dest)
 }
 
 /* Create a mapping from a COMPONENT_REF to a bitmask. */
-static void associate_bitmask(htab_t comp_ref_bitmasks, tree comp_ref, tree bitmask, bool invert)
+static void associate_bitmask(htab_t comp_ref_bitmasks, tree comp_ref, tree bitmask, bool invert, int flags)
 {
   struct bitmask_mapping *mapping = ggc_alloc(sizeof(struct bitmask_mapping));
   mapping->key = comp_ref;
   mapping->bitmask = bitmask;
   mapping->invert = invert;
+  mapping->flags = flags;
 
   struct bitmask_mapping **mapping_slot =
     (struct bitmask_mapping **)htab_find_slot(comp_ref_bitmasks, mapping->key, INSERT);
@@ -710,22 +724,29 @@ static void get_bitmasks(basic_block bb, htab_t comp_ref_bitmasks)
 
 	  if (dest != NULL && source_and_dest_match(source, dest))
 	    {
-	      bool invert; 
+	      bool invert;
+	      int flags;
 	      if (verbose)
 		fprintf(stderr, "Matched source and destination.\n");
 
 	      /* Invert the bitmask if necessary. */
 	      invert = (bitop_code == BIT_AND_EXPR);
 
+	      /* Add the set or clear flags as appropriate. */
+	      if (bitop_code == BIT_AND_EXPR)
+		flags = FIELD_FLAG_CLEAR;
+	      else if (bitop_code == BIT_IOR_EXPR)
+		flags = FIELD_FLAG_SET;
+
 	      /* This is a read followed by an assign (like a |=
 		 or &= operation).  Associate the bitmask with the
 		 _destination_. */
-	      associate_bitmask(comp_ref_bitmasks, dest, bitmask, invert);
+	      associate_bitmask(comp_ref_bitmasks, dest, bitmask, invert, flags);
 
 	      /* Associate an empty bitmask (0x0) with the source
 		 read to indicate that it is _inert_. */
 	      associate_bitmask(comp_ref_bitmasks, source,
-				build_int_cst(long_unsigned_type_node, 0x0), false);
+				build_int_cst(long_unsigned_type_node, 0x0), false, 0);
 	    }
 	  else
 	    {
@@ -734,7 +755,7 @@ static void get_bitmasks(basic_block bb, htab_t comp_ref_bitmasks)
 
 	      /* This is just a straight read.  Associate the
 		 bitmask with the _source_. */
-	      associate_bitmask(comp_ref_bitmasks, source, bitmask, invert);
+	      associate_bitmask(comp_ref_bitmasks, source, bitmask, invert, 0);
 	    }
 	}
     }
@@ -988,7 +1009,7 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
 
   if (TREE_CODE(*node) == COMPONENT_REF && component_ref_matches_directive(*node, directive))
     {
-      int is_marked;
+      int hook_flags;
       gimple hook_call;
 
       /* Once we find one COMPONENT_REF that gets a hook, we no longer
@@ -1008,7 +1029,9 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
 	 we're looking for) is a decl, then it's ok to reference its
 	 node directly.  Otherwise, we need to copy the node. */
       tree record_node = get_record(*node);
-      is_marked = is_record_node_marked(record_node);
+      hook_flags = 0;
+      if (is_record_node_marked(record_node))
+	hook_flags |= FIELD_FLAG_MARKED;
       if (!IS_TYPE_OR_DECL_P(record_node))
 	{
 #ifdef DEBUG
@@ -1065,6 +1088,8 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
 
 	  if ((*mapping)->invert)
 	    bitmask_node = assign_ref_to_tmp(&iter, bitmask_node, "inv_bitmask", true, NULL);
+
+	  hook_flags |= (*mapping)->flags;
 	}
       else
 	{
@@ -1094,7 +1119,7 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
 				    field_name_ptr,
 				    build_int_cst(integer_type_node, field_index),
 				    build_int_cst(integer_type_node, is_write),
-				    build_int_cst(integer_type_node, is_marked),
+				    build_int_cst(integer_type_node, hook_flags),
 				    bitmask_node,
 				    scratch_addr,
 				    func_name_tree,
