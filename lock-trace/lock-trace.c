@@ -118,12 +118,12 @@ static tree get_lock_hook_type()
   if (lock_hook_type == NULL)
     {
       lock_hook_type = build_function_type_list(void_type_node,
-						build_pointer_type(char_type_node),
-						build_pointer_type(char_type_node),
+						build_pointer_type(void_type_node),
+						build_pointer_type(void_type_node),
 						integer_type_node,
-						build_pointer_type(char_type_node),
-						build_pointer_type(char_type_node),
-						build_pointer_type(char_type_node), /* File name */
+						build_pointer_type(void_type_node),
+						build_pointer_type(void_type_node),
+						build_pointer_type(void_type_node), /* File name */
 						integer_type_node,                  /* Line num */
 						NULL_TREE);
     }
@@ -330,6 +330,32 @@ static int is_matching_lock_name(const char *name)
   return false;
 }
 
+/* Create a GIMPLE statement assigning a reference to a temporary
+   variable, add that statement at the iterator gsi, then return the
+   temporary variable.
+
+   If assign_out is not NULL, it is an out parameter that returns the
+   gimple statement that assigns the temp. */
+static tree assign_ref_to_tmp(gimple_stmt_iterator *gsi, tree ref, const char *tmp_prefix,
+			      gimple *assign_out)
+{
+  tree tmp = create_tmp_var(TREE_TYPE(ref), tmp_prefix);
+
+  /* Construct an assign statement: tmp = ref; */
+  gimple assign_stmt = gimple_build_assign(tmp, ref);
+
+  /* The left side of the assignment should be an SSA_NAME, but we
+     can't create the SSA_NAME until after we build the assign
+     statement. */
+  gimple_assign_set_lhs(assign_stmt, make_ssa_name(tmp, assign_stmt));
+
+  gsi_insert_before(gsi, assign_stmt, GSI_SAME_STMT);
+
+  if (assign_out != NULL)
+    *assign_out = assign_stmt;
+  return gimple_assign_lhs(assign_stmt);
+}
+
 /* Given a function call, check if it should be instrumented (i.e., if
    it's a relevant locking function) and if so add the appropriate
    hook. */
@@ -460,10 +486,15 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
   /* Add a hook. */
   hook_decl = build_fn_decl(lock_func->hook_func_name, get_lock_hook_type());
   if (lock_owner != NULL)
-    owner_addr = build1(ADDR_EXPR, build_pointer_type(char_type_node), stabilize_reference(lock_owner));
+    owner_addr = build1(ADDR_EXPR, build_pointer_type(TREE_TYPE(lock_owner)),
+			stabilize_reference(lock_owner));
   else
-    owner_addr = build_int_cst(build_pointer_type(char_type_node), 0); /* NULL pointer */
-  lock_addr = build1(ADDR_EXPR, build_pointer_type(char_type_node), stabilize_reference(lock));
+    owner_addr = build_int_cst(build_pointer_type(void_type_node), 0); /* NULL pointer */
+  owner_addr = assign_ref_to_tmp(gsi, owner_addr, "lock_trace_owner", NULL);
+
+  lock_addr = build1(ADDR_EXPR, build_pointer_type(TREE_TYPE(lock)), stabilize_reference(lock));
+  lock_addr = assign_ref_to_tmp(gsi, lock_addr, "lock_trace_lock", NULL);
+
   func_name_tree = build_string_ptr(gimple_filename(stmt));
   line_num_tree = build_int_cst(integer_type_node, gimple_lineno(stmt));
 
