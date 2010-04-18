@@ -819,6 +819,21 @@ static bool component_ref_matches_directive(tree node, struct field_directive *d
   return true;
 }
 
+/* Searches through the list of field directive for one that matches
+   the given COMPONENT_REF tree node.  If no matching directive is
+   found, this functino returns NULL instead. */
+static struct field_directive *find_matching_directive(tree component_ref)
+{
+  unsigned int i;
+  struct field_directive *directive;
+
+  for (i = 0 ; VEC_iterate(field_directive, field_directive_vec, i, directive) ; i++)
+      if (component_ref_matches_directive(component_ref, directive))
+	return directive;
+
+  return NULL;  /* Couldn't find a match. */
+}
+
 /* Given two COMPONENT_REF nodes, find if one is an ancestor of the
    other.  A node is its own ancester. */
 static bool is_component_ref_ancestor(tree ancestor, tree descendant)
@@ -952,10 +967,6 @@ static void relocate_ssa_defs(basic_block bb, gimple stmt)
 
 struct find_field_refs_args
 {
-  /* The field directive that tells find_field_refs() which field
-     references to a hook to. */
-  struct field_directive *directive;
-
   /* A mapping from COMPONENT_REF nodes to bitmask nodes. */
   htab_t comp_ref_bitmasks;
 
@@ -1002,12 +1013,12 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
   struct find_field_refs_args *args = wi->info;
   
   gimple_stmt_iterator iter = wi->gsi;
-  struct field_directive *directive = args->directive;
+  struct field_directive *directive;
 
   /* Name every scratch variable with an index, so that each name is unique. */
   static unsigned int scratch_index = 0;
 
-  if (TREE_CODE(*node) == COMPONENT_REF && component_ref_matches_directive(*node, directive))
+  if (TREE_CODE(*node) == COMPONENT_REF && (directive = find_matching_directive(*node)) != NULL)
     {
       int hook_flags;
       gimple hook_call;
@@ -1251,22 +1262,15 @@ void insert_field_hooks()
 	  if (gimple_has_location(my_statement))
 	    input_location = gimple_location(my_statement);
 
-	  struct field_directive *directive;
-	  unsigned int i;
+	  struct find_field_refs_args args;
+	  args.comp_ref_bitmasks = comp_ref_bitmasks;
+	  args.write_ref = NULL;
 
-	  for (i = 0 ; VEC_iterate(field_directive, field_directive_vec, i, directive) ; i++)
-	    {
-	      struct find_field_refs_args args;
-	      args.directive = directive;
-	      args.comp_ref_bitmasks = comp_ref_bitmasks;
-	      args.write_ref = NULL;
+	  struct walk_stmt_info wi;
+	  memset(&wi, 0, sizeof(wi));
+	  wi.info = &args;
 
-	      struct walk_stmt_info wi;
-	      memset(&wi, 0, sizeof(wi));
-	      wi.info = &args;
-
-	      walk_gimple_stmt(&gsi, find_field_assigns, find_field_refs, &wi);
-	    }
+	  walk_gimple_stmt(&gsi, find_field_assigns, find_field_refs, &wi);
 	}
     }
 }
