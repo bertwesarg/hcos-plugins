@@ -63,9 +63,14 @@
 #include "tree-flow.h"
 #include "tree-pass.h"
 #include "plugin.h"
-#include "real.h"  /* TODO: Get this into the plugin include directory. */
 #include "gimple.h"
 #include "c-common.h"
+
+/* Defining GENERATOR_FILE prevents real.h from also including the
+   gmp, mpfr and mpc headers, which we do not need. */
+#define GENERATOR_FILE
+#include "real.h"
+#undef GENERATOR_FILE
 
 /* GCC only allows plug-ins that include this symbol. */
 int plugin_is_GPL_compatible;
