@@ -277,7 +277,6 @@ struct lock_func_desc *get_lock_func_desc(tree func)
   func_decl = TREE_OPERAND(func, 0);
   func_name = IDENTIFIER_POINTER(DECL_NAME(func_decl));
 
-	//fprintf(stderr, "Found lock function: %s\n", func_name);
   /* Look for its lock description. */
   for (i = 0 ; VEC_iterate(lock_func_desc, lock_func_vec, i, lock_func) ; i++)
     {
@@ -355,18 +354,14 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
   func = gimple_call_fn(stmt);
 
   if ((lock_func = get_lock_func_desc(func)) == NULL) {
-    
-    //fprintf(stderr," hook file %s %d ",gimple_filename(stmt),gimple_lineno(stmt));
     return;
   }
 
-   // fprintf(stderr," hook file %s %d ",gimple_filename(stmt),gimple_lineno(stmt));
   if(lock_func->semantics != LS_RCU_LOCK && lock_func->semantics != LS_RCU_UNLOCK) {
   /* We are looking at a lock acquire or release function.  Figure out
      the lock and its owner. */
   if (gimple_call_num_args(stmt) < 1) {
       return;
-    //error("(Lock Trace) Call to locking function with no arguments");
   }
   if(lock_func->semantics == LS_ATOMIC_DEC_LOCK) 
     lock = gimple_call_arg(stmt, 1);
@@ -500,8 +495,6 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
      just after acquiring or just before releasing. */
   if (lock_func->semantics == LS_ACQUIRE || lock_func->semantics == LS_TRY|| 
       lock_func->semantics==LS_ATOMIC_DEC_LOCK || lock_func->semantics == LS_RCU_LOCK) {
-    //if(lock_func->semantics == LS_RCU_LOCK)
-      //fprintf(stderr,"rcu_read_lock\n");
     gsi_insert_after(gsi, hook_call, GSI_SAME_STMT);
   }
   else if (lock_func->semantics == LS_RELEASE || lock_func->semantics == LS_RCU_UNLOCK) {

@@ -170,14 +170,10 @@ struct mem_func_desc *get_mem_func_desc(tree func)
   func_decl = TREE_OPERAND(func, 0);
   func_name = IDENTIFIER_POINTER(DECL_NAME(func_decl));
   
-  //fprintf(stderr,"%s %s %d\n",func_name,input_filename,input_line); 
-	//fprintf(stderr, " %s\n", func_name);
   /* Look for its memory description. */
   for (i = 0 ; VEC_iterate(mem_func_desc, mem_func_vec, i, mem_func) ; i++)
     {
       if (strcmp(mem_func->name, func_name) == 0) {
-	//if (verbose)
-	 // fprintf(stderr, "Found memory function: %s\n", func_name);
 	return mem_func;
       }
     }
@@ -314,8 +310,6 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
     gsi_insert_after(gsi, hook_call, GSI_SAME_STMT);
   }
   else if (mem_func->semantics == KUNMAP ) {
-   
-//    fprintf(stderr,"dealloc %s %d\n",input_filename,input_line); 
     gsi_insert_before(gsi, hook_call, GSI_SAME_STMT);
   }
   else
