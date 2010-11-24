@@ -326,6 +326,53 @@ static int is_matching_lock_name(const char *name)
   return false;
 }
 
+/* In cases like this:
+
+   var = obj->lock;
+   spin_lock(var);
+
+   we end up getting a var, but we'd like to be able to trace
+   backwards to see what value was actually assigned to that var (so
+   we can determine that the lock is in fact owned by obj).  Sad to
+   say, we aren't in SSA form yet, so we need to do this step
+   manually.
+
+   Note that even in a case like this:
+
+   spin_lock(obj->var)
+
+   weird early optimizations sometimes transform it to look like the
+   first case, so this step is very important. */
+static tree get_var_src(tree var, gimple_stmt_iterator gsi)
+{
+  if (TREE_CODE(var) != VAR_DECL)
+    return var;
+
+  /* Search backwards within this basic block to find a statement
+     assigning a value to the given variable. */
+  while (gsi.ptr->prev != NULL)
+    {
+      gimple stmt;
+      gsi_prev(&gsi);
+
+      stmt = gsi_stmt(gsi);
+      if (gimple_has_lhs(stmt) && gimple_get_lhs(stmt) == var)
+	{
+	  /* Found it!  If this variable was assigned with a regular
+	     assignment, we can get the actual assigned value.  If
+	     that value is a variable, we can even search farther
+	     back! */
+	  if (gimple_code(stmt) == GIMPLE_ASSIGN && gimple_assign_single_p(stmt))
+	    return get_var_src(gimple_assign_rhs1(stmt), gsi);
+	  else
+	    return var;
+	}
+    }
+
+  /* Couldn't find a source. */
+  return var;
+}
+
 /* Given a function call, check if it should be instrumented (i.e., if
    it's a relevant locking function) and if so add the appropriate
    hook. */
@@ -368,38 +415,7 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
   else
     lock = gimple_call_arg(stmt, 0);
 
-  /* Sometimes an argument gets assigned to an SSA temporary variable
-     before it gets passed as an argument.  We don't want that
-     variable, we want the value assigned to it.  (Look for a better
-     description in the ssa-test test case.)*/
-  while (TREE_CODE(lock) == SSA_NAME)
-    {
-      gimple def_stmt = SSA_NAME_DEF_STMT(lock);
-
-      /* The SSA_NAME_DEF_STMT for lock should be a GIMPLE_ASSIGN
-	 (because it assigns a value to lock).  However, when the lock
-	 is assigned directly fom a function argument, the
-	 SSA_NAME_DEF_STMT is just a NOP statement.  In that case, we
-	 can't determine an owner for the lock. 
-      */
-      if (gimple_code(def_stmt) == GIMPLE_NOP)
-	return;
-      /* Can't determine a lock owner if the lock is defined in an asm
-	 directive.  */
-      else if (gimple_code(def_stmt) == GIMPLE_ASM)
-	return;
-      /* Can't determine a lock owner if the lock can be assigned from
-	 more than one place. */
-      else if (gimple_code(def_stmt) == GIMPLE_PHI)
-	return;
-      /* Can't determine a lock owner if the lock is the result of a
-	 function call. */
-      else if (gimple_code(def_stmt) == GIMPLE_CALL)
-	return;
-
-      gcc_assert(gimple_code(def_stmt) == GIMPLE_ASSIGN);
-      lock = gimple_assign_rhs1(SSA_NAME_DEF_STMT(lock));
-    }
+  lock = get_var_src(lock, *gsi);
 
   if (TREE_CODE(lock) == ADDR_EXPR)  /* Remove the address-of (&) operation. */
     lock = TREE_OPERAND(lock, 0);
@@ -816,7 +832,7 @@ static struct opt_pass pass_instrument_lock_calls = {
 
 static struct register_pass_info pass_info = {
   .pass = &pass_instrument_lock_calls,
-  .reference_pass_name = "*all_optimizations",
+  .reference_pass_name = "veclower",
   .ref_pass_instance_number = 0,
   .pos_op = PASS_POS_INSERT_BEFORE,
 };
