@@ -65,6 +65,15 @@ int plugin_is_GPL_compatible;
 #define NOINSTRUMENT_ATTR "hcos_noinstrument"
 #define MARKED_ATTR "hcos_marked"
 
+/* Flags that can be passed to the hook function. */
+#define FIELD_FLAG_MARKED 0x1
+
+/* True for bitmasked operations that always set bits to 1. */
+#define FIELD_FLAG_SET 0x2
+
+/* True for bitmasked operations that always clear bits to 0. */
+#define FIELD_FLAG_CLEAR 0x4
+
 /* Print some potentially useful info when verbose is true.  When
    DEBUG is off, use the verbose=true option in the plugin args to
    turn verbose mode on. */
@@ -431,6 +440,10 @@ struct bitmask_mapping {
   tree key;
   tree bitmask;
   bool invert;
+
+  /* These flags (with get passed with the hook flags) indicate if the
+     operation is a set or a clear. */
+  int flags;
 };
 
 static hashval_t hash_bitmask_mapping(const void *key)
@@ -573,12 +586,13 @@ static bool source_and_dest_match(tree source, tree dest)
 }
 
 /* Create a mapping from a COMPONENT_REF to a bitmask. */
-static void associate_bitmask(htab_t comp_ref_bitmasks, tree comp_ref, tree bitmask, bool invert)
+static void associate_bitmask(htab_t comp_ref_bitmasks, tree comp_ref, tree bitmask, bool invert, int flags)
 {
   struct bitmask_mapping *mapping = ggc_alloc(sizeof(struct bitmask_mapping));
   mapping->key = comp_ref;
   mapping->bitmask = bitmask;
   mapping->invert = invert;
+  mapping->flags = flags;
 
   struct bitmask_mapping **mapping_slot =
     (struct bitmask_mapping **)htab_find_slot(comp_ref_bitmasks, mapping->key, INSERT);
@@ -708,22 +722,29 @@ static void get_bitmasks(basic_block bb, htab_t comp_ref_bitmasks)
 
 	  if (dest != NULL && source_and_dest_match(source, dest))
 	    {
-	      bool invert; 
+	      bool invert;
+	      int flags;
 	      if (verbose)
 		fprintf(stderr, "Matched source and destination.\n");
 
 	      /* Invert the bitmask if necessary. */
 	      invert = (bitop_code == BIT_AND_EXPR);
 
+	      /* Add the set or clear flags as appropriate. */
+	      if (bitop_code == BIT_AND_EXPR)
+		flags = FIELD_FLAG_CLEAR;
+	      else if (bitop_code == BIT_IOR_EXPR)
+		flags = FIELD_FLAG_SET;
+
 	      /* This is a read followed by an assign (like a |=
 		 or &= operation).  Associate the bitmask with the
 		 _destination_. */
-	      associate_bitmask(comp_ref_bitmasks, dest, bitmask, invert);
+	      associate_bitmask(comp_ref_bitmasks, dest, bitmask, invert, flags);
 
 	      /* Associate an empty bitmask (0x0) with the source
 		 read to indicate that it is _inert_. */
 	      associate_bitmask(comp_ref_bitmasks, source,
-				build_int_cst(long_unsigned_type_node, 0x0), false);
+				build_int_cst(long_unsigned_type_node, 0x0), false, 0);
 	    }
 	  else
 	    {
@@ -732,7 +753,7 @@ static void get_bitmasks(basic_block bb, htab_t comp_ref_bitmasks)
 
 	      /* This is just a straight read.  Associate the
 		 bitmask with the _source_. */
-	      associate_bitmask(comp_ref_bitmasks, source, bitmask, invert);
+	      associate_bitmask(comp_ref_bitmasks, source, bitmask, invert, 0);
 	    }
 	}
     }
@@ -794,6 +815,21 @@ static bool component_ref_matches_directive(tree node, struct field_directive *d
 
   /* Looks good! */
   return true;
+}
+
+/* Searches through the list of field directive for one that matches
+   the given COMPONENT_REF tree node.  If no matching directive is
+   found, this functino returns NULL instead. */
+static struct field_directive *find_matching_directive(tree component_ref)
+{
+  unsigned int i;
+  struct field_directive *directive;
+
+  for (i = 0 ; VEC_iterate(field_directive, field_directive_vec, i, directive) ; i++)
+      if (component_ref_matches_directive(component_ref, directive))
+	return directive;
+
+  return NULL;  /* Couldn't find a match. */
 }
 
 /* Given two COMPONENT_REF nodes, find if one is an ancestor of the
@@ -929,10 +965,6 @@ static void relocate_ssa_defs(basic_block bb, gimple stmt)
 
 struct find_field_refs_args
 {
-  /* The field directive that tells find_field_refs() which field
-     references to a hook to. */
-  struct field_directive *directive;
-
   /* A mapping from COMPONENT_REF nodes to bitmask nodes. */
   htab_t comp_ref_bitmasks;
 
@@ -979,19 +1011,20 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
   struct find_field_refs_args *args = wi->info;
   
   gimple_stmt_iterator iter = wi->gsi;
-  struct field_directive *directive = args->directive;
+  struct field_directive *directive;
 
   /* Name every scratch variable with an index, so that each name is unique. */
   static unsigned int scratch_index = 0;
 
-  if (TREE_CODE(*node) == COMPONENT_REF && component_ref_matches_directive(*node, directive))
-    {
-      int is_marked;
-      gimple hook_call;
+  /* Once we find one COMPONENT_REF that gets a hook, we no longer
+     wish to descend further looking for any more. */
+  if (TREE_CODE(*node) == COMPONENT_REF)
+    *walk_subtrees = 0;
 
-      /* Once we find one COMPONENT_REF that gets a hook, we no longer
-	 wish to descend further looking for any more.*/
-      *walk_subtrees = 0;
+  if (TREE_CODE(*node) == COMPONENT_REF && (directive = find_matching_directive(*node)) != NULL)
+    {
+      int hook_flags;
+      gimple hook_call;
 
 #ifdef DEBUG
       fprintf(stderr, "  Found component ref.\n");
@@ -1006,7 +1039,9 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
 	 we're looking for) is a decl, then it's ok to reference its
 	 node directly.  Otherwise, we need to copy the node. */
       tree record_node = get_record(*node);
-      is_marked = is_record_node_marked(record_node);
+      hook_flags = 0;
+      if (is_record_node_marked(record_node))
+	hook_flags |= FIELD_FLAG_MARKED;
       if (!IS_TYPE_OR_DECL_P(record_node))
 	{
 #ifdef DEBUG
@@ -1063,6 +1098,8 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
 
 	  if ((*mapping)->invert)
 	    bitmask_node = assign_ref_to_tmp(&iter, bitmask_node, "inv_bitmask", true, NULL);
+
+	  hook_flags |= (*mapping)->flags;
 	}
       else
 	{
@@ -1083,7 +1120,8 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
       static int access_index = 0;
       tree index_tree = build_int_cst(integer_type_node, access_index++);
       tree struct_index_tree = build_int_cst(integer_type_node, directive->struct_index);
-
+      if(input_filename == NULL)
+        fprintf(stderr,"Error: Filename is null");
       record_addr = assign_ref_to_tmp(&iter, record_addr, "record_addr", false, NULL);
       hook_call = gimple_build_call(hook_func_decl, 12,
 				    record_addr,
@@ -1091,7 +1129,7 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
 				    field_name_ptr,
 				    build_int_cst(integer_type_node, field_index),
 				    build_int_cst(integer_type_node, is_write),
-				    build_int_cst(integer_type_node, is_marked),
+				    build_int_cst(integer_type_node, hook_flags),
 				    bitmask_node,
 				    scratch_addr,
 				    func_name_tree,
@@ -1178,7 +1216,7 @@ void parse_field_directive(const char *directive_string)
   directive.struct_name = args[0];
   directive.field_name = args[1];
   directive.hook_func_name = args[2];
-  directive.struct_index = struct_index++;
+  directive.struct_index = ++struct_index;
   VEC_safe_push(field_directive, heap, field_directive_vec, &directive);
 
   if (verbose)
@@ -1223,22 +1261,15 @@ void insert_field_hooks()
 	  if (gimple_has_location(my_statement))
 	    input_location = gimple_location(my_statement);
 
-	  struct field_directive *directive;
-	  unsigned int i;
+	  struct find_field_refs_args args;
+	  args.comp_ref_bitmasks = comp_ref_bitmasks;
+	  args.write_ref = NULL;
 
-	  for (i = 0 ; VEC_iterate(field_directive, field_directive_vec, i, directive) ; i++)
-	    {
-	      struct find_field_refs_args args;
-	      args.directive = directive;
-	      args.comp_ref_bitmasks = comp_ref_bitmasks;
-	      args.write_ref = NULL;
+	  struct walk_stmt_info wi;
+	  memset(&wi, 0, sizeof(wi));
+	  wi.info = &args;
 
-	      struct walk_stmt_info wi;
-	      memset(&wi, 0, sizeof(wi));
-	      wi.info = &args;
-
-	      walk_gimple_stmt(&gsi, find_field_assigns, find_field_refs, &wi);
-	    }
+	  walk_gimple_stmt(&gsi, find_field_assigns, find_field_refs, &wi);
 	}
     }
 }

@@ -257,8 +257,8 @@ static void instrument_assignment(gimple_stmt_iterator *gsi)
 	    return;  /* mark_addressable() failed: we're not assigning to something with an address. */
 	  lhs_pointer = assign_ref_to_tmp(gsi, lhs_pointer, "assign_tmp_ptr", NULL);
 
-	  func_name_tree = build_string_ptr(gimple_filename(stmt));
-	  line_num_tree = build_int_cst(integer_type_node, gimple_lineno(stmt));
+	  func_name_tree = build_string_ptr(input_filename);
+	  line_num_tree = build_int_cst(integer_type_node, input_line);
 
 	  hook_decl = build_fn_decl(directive->hook_func_name, get_assign_hook_type());
 	  hook_call = gimple_build_call(hook_decl, 3, lhs_pointer, func_name_tree, line_num_tree);
