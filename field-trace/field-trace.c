@@ -30,6 +30,7 @@
 #define _GNU_SOURCE
 
 #include <inttypes.h>
+#include <locale.h>
 
 #include "config.h"
 #include "system.h"
@@ -106,7 +107,7 @@ DEF_VEC_O(field_directive);
 DEF_VEC_ALLOC_O(field_directive, heap);
 static VEC(field_directive, heap) *field_directive_vec;
 
-tree field_hook_type = NULL;
+static tree field_hook_type = NULL;
 
 static tree get_field_hook_type()
 {
@@ -117,7 +118,7 @@ static tree get_field_hook_type()
        * void __report_field_access(void *record_ptr, const char *record, const char *field,
        *                            int field_index, int is_write, int is_marked,
        *                            unsigned long bitmask, int *scratch, const char *filename,
-       *                            int lineno, int index);
+       *                            int lineno, int index, int struct_index);
        */
       field_hook_type = build_function_type_list(void_type_node,
 						 build_pointer_type(char_type_node),
@@ -131,6 +132,7 @@ static tree get_field_hook_type()
 						 build_pointer_type(char_type_node), /*File name*/
 						 integer_type_node, /* Line number */
 						 integer_type_node, /* Index */
+						 integer_type_node, /* Struct index */
 						 NULL_TREE);
     }
 
@@ -1135,7 +1137,7 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
 				    func_name_tree,
 				    line_num_tree,
 				    index_tree,
-            struct_index_tree);
+				    struct_index_tree);
       gsi_insert_before(&iter, hook_call, GSI_SAME_STMT);
 
 #ifdef DEBUG
