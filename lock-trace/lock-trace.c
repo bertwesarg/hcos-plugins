@@ -326,6 +326,27 @@ static int is_matching_lock_name(const char *name)
   return false;
 }
 
+/* Create a GIMPLE statement assigning a reference to a temporary
+   variable, add that statement at the iterator gsi, then return the
+   temporary variable.
+
+   If assign_out is not NULL, it is an out parameter that returns the
+   gimple statement that assigns the temp. */
+static tree assign_ref_to_tmp(gimple_stmt_iterator *gsi, tree ref, const char *tmp_prefix,
+			      gimple *assign_out)
+{
+  tree tmp = create_tmp_var(TREE_TYPE(ref), tmp_prefix);
+
+  /* Construct an assign statement: tmp = ref; */
+  gimple assign_stmt = gimple_build_assign(tmp, ref);
+
+  gsi_insert_before(gsi, assign_stmt, GSI_SAME_STMT);
+
+  if (assign_out != NULL)
+    *assign_out = assign_stmt;
+  return gimple_assign_lhs(assign_stmt);
+}
+
 /* In cases like this:
 
    var = obj->lock;
@@ -404,116 +425,125 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
     return;
   }
 
-  if(lock_func->semantics != LS_RCU_LOCK && lock_func->semantics != LS_RCU_UNLOCK) {
-  /* We are looking at a lock acquire or release function.  Figure out
-     the lock and its owner. */
-  if (gimple_call_num_args(stmt) < 1) {
-      return;
-  }
-  if(lock_func->semantics == LS_ATOMIC_DEC_LOCK) 
-    lock = gimple_call_arg(stmt, 1);
-  else
-    lock = gimple_call_arg(stmt, 0);
-
-  lock = get_var_src(lock, *gsi);
-
-  if (TREE_CODE(lock) == ADDR_EXPR)  /* Remove the address-of (&) operation. */
-    lock = TREE_OPERAND(lock, 0);
-
-  /* We can only determine a lock's owner if we have it in the form
-     record.lock or record->lock. */
-  if (TREE_CODE(lock) == COMPONENT_REF)
+  if(lock_func->semantics != LS_RCU_LOCK && lock_func->semantics != LS_RCU_UNLOCK)
     {
-      lock_owner = get_record(lock);
-
-      /* This is a lock acquire/release, but do we care about the
-	 lock's owner? */
-      if (!is_matching_lock_owner(lock_owner))
-	return;
-
-      owner_name = get_record_name_ptr(lock);
-      lock_name = get_field_name_ptr(lock);
-    }
-  else if (TREE_CODE(lock) == VAR_DECL)
-    {
-      /* This is a global lock, but is it a global lock we care
-	 about? */
-      if (DECL_NAME(lock) == NULL)
-	return;  /* Odd: a variable without a name. */
-
-      const char *lock_name_str = IDENTIFIER_POINTER(DECL_NAME(lock));
-      if (!is_matching_lock_name(lock_name_str))
-	return;
-
-      lock_owner = NULL;
-      owner_name = build_int_cst(build_pointer_type(char_type_node), 0); /* NULL pointer */
-      lock_name = build_string_ptr(lock_name_str);
-    }
-  else
-    {
-      if (verbose)
-	fprintf(stderr, "(Lock Watch) Non-global lock without owner at line %d.\n", input_line);
-      return;
-    }
-
-  /* If this is an LS_TRY lock function, we need a reference to the
-     function's return value.*/
-  if (lock_func->semantics == LS_TRY||lock_func->semantics == LS_ATOMIC_DEC_LOCK)
-    {
-      /* If this function isn't on the right side of an assignment,
-	 somebody screwed up bad.  We have no way to pass the result
-	 of the try to the hook function. */
-      if (gimple_call_lhs(stmt) == NULL)
+      /* We are looking at a lock acquire or release function.  Figure out
+	 the lock and its owner. */
+      if (gimple_call_num_args(stmt) < 1)
 	{
-	  error("(Lock Trace) Result of try lock function is not available.  Did you call a try "
-		"lock function without storing its result?\n");
 	  return;
 	}
 
-      lock_success = stabilize_reference(gimple_call_lhs(stmt));
-    }
-  else
-    {
-      /* LS_ACQUIRE and LS_RELEASE locks always succeed. */
-      lock_success = build_int_cst(integer_type_node, 1 /* 1 for true */);
+      if(lock_func->semantics == LS_ATOMIC_DEC_LOCK) 
+	lock = gimple_call_arg(stmt, 1);
+      else
+	lock = gimple_call_arg(stmt, 0);
+
+      lock = get_var_src(lock, *gsi);
+
+      if (TREE_CODE(lock) == ADDR_EXPR)  /* Remove the address-of (&) operation. */
+	lock = TREE_OPERAND(lock, 0);
+
+      /* We can only determine a lock's owner if we have it in the form
+	 record.lock or record->lock. */
+      if (TREE_CODE(lock) == COMPONENT_REF)
+	{
+	  lock_owner = get_record(lock);
+
+	  /* This is a lock acquire/release, but do we care about the
+	     lock's owner? */
+	  if (!is_matching_lock_owner(lock_owner))
+	    return;
+
+	  owner_name = get_record_name_ptr(lock);
+	  lock_name = get_field_name_ptr(lock);
+	}
+      else if (TREE_CODE(lock) == VAR_DECL)
+	{
+	  /* This is a global lock, but is it a global lock we care
+	     about? */
+	  if (DECL_NAME(lock) == NULL)
+	    return;  /* Odd: a variable without a name. */
+
+	  const char *lock_name_str = IDENTIFIER_POINTER(DECL_NAME(lock));
+	  if (!is_matching_lock_name(lock_name_str))
+	    return;
+
+	  lock_owner = NULL;
+	  owner_name = build_int_cst(build_pointer_type(char_type_node), 0); /* NULL pointer */
+	  lock_name = build_string_ptr(lock_name_str);
+	}
+      else
+	{
+	  if (verbose)
+	    fprintf(stderr, "(Lock Watch) Non-global lock without owner at line %d.\n", input_line);
+	  return;
+	}
+
+      /* If this is an LS_TRY lock function, we need a reference to the
+	 function's return value.*/
+      if (lock_func->semantics == LS_TRY || lock_func->semantics == LS_ATOMIC_DEC_LOCK)
+	{
+	  /* If this function isn't on the right side of an assignment,
+	     somebody screwed up bad.  We have no way to pass the result
+	     of the try to the hook function. */
+	  if (gimple_call_lhs(stmt) == NULL)
+	    {
+	      error("(Lock Trace) Result of try lock function is not available.  Did you call a try "
+		    "lock function without storing its result?\n");
+	      return;
+	    }
+
+	  lock_success = stabilize_reference(gimple_call_lhs(stmt));
+	}
+      else
+	{
+	  /* LS_ACQUIRE and LS_RELEASE locks always succeed. */
+	  lock_success = build_int_cst(integer_type_node, 1 /* 1 for true */);
+	}
+
+      if (lock_owner != NULL)
+	owner_addr = build1(ADDR_EXPR, build_pointer_type(char_type_node), stabilize_reference(lock_owner));
+      else
+	owner_addr = build_int_cst(build_pointer_type(char_type_node), 0); /* NULL pointer */
+      owner_addr = assign_ref_to_tmp(gsi, owner_addr, "lock_trace_owner", NULL);
+
+      lock_addr = build1(ADDR_EXPR, build_pointer_type(char_type_node), stabilize_reference(lock));
+      lock_addr = assign_ref_to_tmp(gsi, lock_addr, "lock_trace_lock", NULL);
     }
 
-  if (lock_owner != NULL)
-    owner_addr = build1(ADDR_EXPR, build_pointer_type(char_type_node), stabilize_reference(lock_owner));
-  else
-    owner_addr = build_int_cst(build_pointer_type(char_type_node), 0); /* NULL pointer */
-  lock_addr = build1(ADDR_EXPR, build_pointer_type(char_type_node), stabilize_reference(lock));
-  }
   /* Add a hook. */
   hook_decl = build_fn_decl(lock_func->hook_func_name, get_lock_hook_type());
   
   func_name_tree = build_string_ptr(gimple_filename(stmt));
   line_num_tree = build_int_cst(integer_type_node, gimple_lineno(stmt));
   if(gimple_filename(stmt) == NULL)
-  {
-    fprintf(stderr,"Lock Trace:Filename is null\n ");
-  }
-  if(lock_func->semantics != LS_RCU_LOCK && lock_func->semantics != LS_RCU_UNLOCK) {
-    hook_call = gimple_build_call(hook_decl, 7,
-				owner_addr,
-				lock_addr,
-				lock_success,
-				owner_name,
-				lock_name,
-				func_name_tree,
-				line_num_tree);
-  }
+    {
+      fprintf(stderr,"Lock Trace:Filename is null\n ");
+    }
+
+  if(lock_func->semantics != LS_RCU_LOCK && lock_func->semantics != LS_RCU_UNLOCK)
+    {
+      hook_call = gimple_build_call(hook_decl, 7,
+				    owner_addr,
+				    lock_addr,
+				    lock_success,
+				    owner_name,
+				    lock_name,
+				    func_name_tree,
+				    line_num_tree);
+    }
   else
-  {
-    hook_call = gimple_build_call(hook_decl, 2,
-				func_name_tree,
-				line_num_tree);
-  }
+    {
+      hook_call = gimple_build_call(hook_decl, 2,
+				    func_name_tree,
+				    line_num_tree);
+    }
 
   /* We want to call the hook function with the lock held, so add it
      just after acquiring or just before releasing. */
-  if (lock_func->semantics == LS_ACQUIRE || lock_func->semantics == LS_TRY|| 
-      lock_func->semantics==LS_ATOMIC_DEC_LOCK || lock_func->semantics == LS_RCU_LOCK) {
+  if (lock_func->semantics == LS_ACQUIRE || lock_func->semantics == LS_TRY
+      || lock_func->semantics==LS_ATOMIC_DEC_LOCK || lock_func->semantics == LS_RCU_LOCK) {
     gsi_insert_after(gsi, hook_call, GSI_SAME_STMT);
   }
   else if (lock_func->semantics == LS_RELEASE || lock_func->semantics == LS_RCU_UNLOCK) {
