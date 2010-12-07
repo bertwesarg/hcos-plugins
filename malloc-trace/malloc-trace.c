@@ -32,7 +32,6 @@
 #define _GNU_SOURCE
 
 #include <inttypes.h>
-#include <locale.h>
 
 #include "config.h"
 #include "system.h"
@@ -150,29 +149,13 @@ static tree build_string_ptr(const char* string)
 
 /* If there is a memory function with the given name, return its
    description.  Otherwise, return NULL. */
-struct mem_func_desc *lookup_mem_func_desc(const char *func_name)
-{
-  unsigned int i;
-  struct mem_func_desc *mem_func;
-
-  for (i = 0 ; VEC_iterate(mem_func_desc, mem_func_vec, i, mem_func) ; i++)
-    {
-      if (strcmp(mem_func->name, func_name) == 0) {
-	if (verbose)
-	  fprintf(stderr, "Found memory function: %s\n", func_name);
-	return mem_func;
-      }
-    }
-
-  return NULL;  /* Didn't find a matching description. */
-}
-
-/* If there is a memory function with the same name as the given
-   function call, return its description.  Otherwise, return NULL. */
 struct mem_func_desc *get_mem_func_desc(tree func)
 {
   tree func_decl;
   const char *func_name;
+
+  unsigned int i;
+  struct mem_func_desc *mem_func;
 
   if (TREE_CODE(func) != ADDR_EXPR)
     {
@@ -186,9 +169,16 @@ struct mem_func_desc *get_mem_func_desc(tree func)
   /* Get the function's name. */
   func_decl = TREE_OPERAND(func, 0);
   func_name = IDENTIFIER_POINTER(DECL_NAME(func_decl));
-
+  
   /* Look for its memory description. */
-  return lookup_mem_func_desc(func_name);
+  for (i = 0 ; VEC_iterate(mem_func_desc, mem_func_vec, i, mem_func) ; i++)
+    {
+      if (strcmp(mem_func->name, func_name) == 0) {
+	return mem_func;
+      }
+    }
+
+  return NULL;
 }
 
 /* Create a GIMPLE statement assigning a reference to a temporary
@@ -255,7 +245,6 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
 	  gimple_call_set_lhs(stmt, new_lhs);
 	  update_stmt(stmt);
 	}
-
       addr_arg = stabilize_reference(gimple_call_lhs(stmt));
     }
   else if (mem_func->semantics == KUNMAP)
@@ -278,7 +267,8 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
     {
       if (gimple_call_num_args(stmt) < 1)
 	{
-	  error("(Malloc Trace) Call to a MALLOC- or KMEM-style function with no size argument.\n");
+	  //Abhinav:Commented bec plugin is not recognizing kzalloc(SIZE,NOFS) here size is a macro
+    //error("(Malloc Trace) Call to a MALLOC- or KMEM-style function with no size argument.\n");
 	  return;
 	}
 
@@ -301,7 +291,8 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
   /* File name and line number for this hook. */
   file_name_tree = build_string_ptr(input_filename);
   line_num_tree = build_int_cst(integer_type_node, input_line);
-
+  if(input_filename == NULL)
+    fprintf(stderr,"Malloc trace:Filename is null\n ",input_filename);
   hook_call = gimple_build_call(hook_decl, 4,
 				addr_arg,
 				size_arg,
@@ -313,10 +304,14 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
      interested in the argument to an MUNMAP-style call, which might
      no longer be valid after the call.  These calls have their hook
      before the call. */
-  if (mem_func->semantics == KMALLOC || mem_func->semantics == KMAP || mem_func->semantics == KMEM)
+  if (mem_func->semantics == KMALLOC || mem_func->semantics == KMAP || mem_func->semantics == KMEM) {
+    if(mem_func->semantics == KMEM )
+      fprintf(stderr,"alloc %s %d\n",input_filename,input_line); 
     gsi_insert_after(gsi, hook_call, GSI_SAME_STMT);
-  else if (mem_func->semantics == KUNMAP )
+  }
+  else if (mem_func->semantics == KUNMAP ) {
     gsi_insert_before(gsi, hook_call, GSI_SAME_STMT);
+  }
   else
     gcc_unreachable();
 }
@@ -582,46 +577,6 @@ static unsigned int transform_gimple()
   return 0;
 }
 
-/* The mark_noinline pass is placed as the very first GIMPLE pass.
-   This is the absolute earliest that we can currently place it that
-   is still after function parsing.
-
-   The pass finds every function we want to track and marks it as
-   noclone and noinline.  */
-static unsigned int mark_noinline()
-{
-  static bool init_done = false;
-  if (!init_done)
-    {
-      struct cgraph_node *node;
-      for (node = cgraph_nodes ; node != NULL ; node = node->next)
-	{
-	  tree func_decl = node->decl;
-	  const char *func_name = IDENTIFIER_POINTER(DECL_NAME(func_decl));
-
-	  if (lookup_mem_func_desc(func_name) != NULL)
-	    {
-	      tree attr;
-
-	      fprintf(stderr, "Marking as no clone: %s\n", func_name);
-
-	      /* Is this function a function that we're tracking?
-		 Mark it as noinline... */
-	      gcc_assert(TREE_CODE(func_decl) == FUNCTION_DECL);
-	      DECL_UNINLINABLE(func_decl) = 1;
-
-	      /* ...and add a noclone attribute. */
-	      attr = build_tree_list(get_identifier("noclone"), NULL_TREE);
-	      chainon(DECL_ATTRIBUTES(func_decl), attr);
-	    }
-	}
-
-      init_done = true;
-    }
-
-  return 0;
-}
-
 /* Some attributes (mainly noinstrument) are shared by several
    plug-ins.  If all the plug-ins attempt to register the same
    attribute, GCC will get angry (and fail an assert check).  This
@@ -692,29 +647,6 @@ static struct register_pass_info pass_info = {
   .pos_op = PASS_POS_INSERT_BEFORE,
 };
 
-static struct opt_pass pass_mark_noinline = {
-  .type = GIMPLE_PASS,
-  .name = "mark_noinline",
-  .gate = NULL,
-  .execute = mark_noinline,
-  .sub = NULL,
-  .next = NULL,
-  .static_pass_number = 0,
-  .tv_id = 0,
-  .properties_required = 0,
-  .properties_provided = 0,
-  .properties_destroyed = 0,
-  .todo_flags_start = 0,
-  .todo_flags_finish = 0,
-};
-
-static struct register_pass_info noinline_pass_info = {
-  .pass = &pass_mark_noinline,
-  .reference_pass_name = "*warn_unused_result",
-  .ref_pass_instance_number = 0,
-  .pos_op = PASS_POS_INSERT_BEFORE,
-};
-
 int plugin_init(struct plugin_name_args *plugin_info, struct plugin_gcc_version *version)
 {
   const char *plugin_name = plugin_info->base_name;
@@ -761,10 +693,6 @@ int plugin_init(struct plugin_name_args *plugin_info, struct plugin_gcc_version 
 
   /* Set up a callback to register our attributes. */
   register_callback(plugin_name, PLUGIN_ATTRIBUTES, register_plugin_attributes, NULL);
-
-  /* Register the noinline pass, which prevents tracked functions from
-     being inlined or versioned. */
-  register_callback(plugin_name, PLUGIN_PASS_MANAGER_SETUP, NULL, &noinline_pass_info);
 
   /* Register the main GIMPLE pass, which performs the actual instrumentation. */
   register_callback(plugin_name, PLUGIN_PASS_MANAGER_SETUP, NULL, &pass_info);

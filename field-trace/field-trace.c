@@ -1018,14 +1018,15 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
   /* Name every scratch variable with an index, so that each name is unique. */
   static unsigned int scratch_index = 0;
 
+  /* Once we find one COMPONENT_REF that gets a hook, we no longer
+     wish to descend further looking for any more. */
+  if (TREE_CODE(*node) == COMPONENT_REF)
+    *walk_subtrees = 0;
+
   if (TREE_CODE(*node) == COMPONENT_REF && (directive = find_matching_directive(*node)) != NULL)
     {
       int hook_flags;
       gimple hook_call;
-
-      /* Once we find one COMPONENT_REF that gets a hook, we no longer
-	 wish to descend further looking for any more.*/
-      *walk_subtrees = 0;
 
 #ifdef DEBUG
       fprintf(stderr, "  Found component ref.\n");
@@ -1117,12 +1118,12 @@ static tree find_field_refs(tree *node, int *walk_subtrees, void *data)
       /* File name and line number for this hook. */
       tree func_name_tree = build_string_ptr(input_filename);
       tree line_num_tree = build_int_cst(integer_type_node, input_line);
-
       /* Each hook gets a unique index. */
       static int access_index = 0;
       tree index_tree = build_int_cst(integer_type_node, access_index++);
       tree struct_index_tree = build_int_cst(integer_type_node, directive->struct_index);
-
+      if(input_filename == NULL)
+        fprintf(stderr,"Error: Filename is null");
       record_addr = assign_ref_to_tmp(&iter, record_addr, "record_addr", false, NULL);
       hook_call = gimple_build_call(hook_func_decl, 12,
 				    record_addr,
@@ -1217,7 +1218,7 @@ void parse_field_directive(const char *directive_string)
   directive.struct_name = args[0];
   directive.field_name = args[1];
   directive.hook_func_name = args[2];
-  directive.struct_index = struct_index++;
+  directive.struct_index = ++struct_index;
   VEC_safe_push(field_directive, heap, field_directive_vec, &directive);
 
   if (verbose)
