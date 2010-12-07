@@ -438,9 +438,12 @@ static void instrument_function_call(gimple_stmt_iterator *gsi)
     {
       /* This is a global lock, but is it a global lock we care
 	 about? */
+      if (DECL_NAME(lock) == NULL)
+	return;  /* Odd: a variable without a name. */
+
       const char *lock_name_str = IDENTIFIER_POINTER(DECL_NAME(lock));
       if (!is_matching_lock_name(lock_name_str))
-	      return;
+	return;
 
       lock_owner = NULL;
       owner_name = build_int_cst(build_pointer_type(char_type_node), 0); /* NULL pointer */
