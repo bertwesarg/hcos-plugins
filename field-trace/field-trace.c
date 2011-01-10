@@ -1248,6 +1248,10 @@ void insert_field_hooks()
 	  if (gimple_has_location(my_statement))
 	    input_location = gimple_location(my_statement);
 
+	  /* Just ignore debug statements. */
+	  if (gimple_code(my_statement) == GIMPLE_DEBUG)
+	    continue;
+
 	  struct find_field_refs_args args;
 	  args.comp_ref_bitmasks = comp_ref_bitmasks;
 	  args.write_ref = NULL;
