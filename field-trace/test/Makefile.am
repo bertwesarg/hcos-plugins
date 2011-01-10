@@ -4,3 +4,4 @@ TESTS_ENVIRONMENT = CC=$(CC) \
 TESTS = field-test.c share-test.c stabilize-test.c attrib-test.c union-test.c \
 	trans-union-test.c bitops-test.c union-write-test.c typedef-test.c \
 	bitparam-test.c index-test.c
+XFAIL_TESTS = bitparam-test.c

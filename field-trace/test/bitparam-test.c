@@ -12,6 +12,11 @@
    out of order.  We need to move statement 5 up to be before
    statement 1! */
 
+/* This test case is no longer useful because we simplified bitmask
+   handling to require that the bitmask be the problem.  That solves
+   the problem, but it also breaks this test case, which is now
+   expected to fail. */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

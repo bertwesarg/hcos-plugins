@@ -460,17 +460,20 @@ static int eq_bitmask_mapping(const void *mapping_ptr, const void *key)
 }
 
 /* Given a variable, trace backwards through the chain of assignments
-   that lead to it.  We want to know if the origin is a COMPONENT_REF.
-   If it is, return that COMPONENT_REF. */
+   that lead to it.  We want to know if the origin is a COMPONENT_REF
+   or INTEGER_CST.  If it is, return that
+   COMPONENT_REF|INTEGER_CST. */
 static tree trace_source(gimple_stmt_iterator back_it, tree start)
 {
+  tree source;
+
   if (start == NULL)
     return NULL;
 
-  tree source = start;
+  source = start;
 
   while (1) {
-    if (TREE_CODE(source) == COMPONENT_REF) {
+    if (TREE_CODE(source) == COMPONENT_REF || TREE_CODE(source) == INTEGER_CST) {
       if (verbose)
 	fprintf(stderr, "Found source at line: %d\n", gimple_lineno(gsi_stmt(back_it)));
       return source;  /* We found it. */
@@ -663,45 +666,27 @@ static void get_bitmasks(basic_block bb, htab_t comp_ref_bitmasks)
 
       dest = gimple_op(stmt, 0);
 
-      tree source;
-      tree bitmask;
+      tree source = NULL;
+      tree bitmask = NULL;
       tree source_left;
       tree source_right;
       source_left = trace_source(gsi, left);
       source_right = trace_source(gsi, right);
-      if (TREE_CODE(left) == COMPONENT_REF)
+      if (source_left != NULL && source_right != NULL)
 	{
-	  source = left;
-	  bitmask = right;
-	}
-      else if (TREE_CODE(right) == COMPONENT_REF)
-	{
-	  source = right;
-	  bitmask = left;
-	}
-      else if (source_left != NULL && TREE_CODE(source_left) == COMPONENT_REF)
-	{
-	  source = left;
-	  bitmask = right;
-	}
-      else if (source_right != NULL && TREE_CODE(source_right) == COMPONENT_REF)
-	{
-	  source = right;
-	  bitmask = left;
-	}
-      else
-	{
-	  source = NULL;
-	  bitmask = NULL;
+	  if (TREE_CODE(source_left) == COMPONENT_REF && TREE_CODE(source_right) == INTEGER_CST)
+	    {
+	      source = source_left;
+	      bitmask = source_right;
+	    }
+	  else if (TREE_CODE(source_right) == COMPONENT_REF&& TREE_CODE(source_left) == INTEGER_CST)
+	    {
+	      source = source_right;
+	      bitmask = source_left;
+	    }
 	}
 
-      /* We found a variable that is being masked with a bitwise
-	 operator (along with the mask itself).  Let's trace back
-	 through previous statements to find the variable's source.
-	 We want to know if that source is a COMPONENT_REF. */
-      source = trace_source(gsi, source);
-
-      if (source != NULL)
+      if (source != NULL && bitmask != NULL)
 	{
 	  if (verbose)
 	    fprintf(stderr, "Found bitmask source: %p.\n", source);
