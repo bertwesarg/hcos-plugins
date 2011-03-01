@@ -351,7 +351,7 @@ static void insert_alloc_hooks()
    mem_desc_vec. */
 static void parse_mem_func_desc(const char *desc_string)
 {
-  char *fields[2];  /* There are three fields, separated by - characters. */
+  char *fields[3];  /* There are three fields, separated by - characters. */
   const char *str_start;
   const char *str_end;
   int str_size;
