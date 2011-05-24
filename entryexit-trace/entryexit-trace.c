@@ -60,8 +60,6 @@ int plugin_is_GPL_compatible;
 //#define DEBUG
 //#define PAUSE_ON_START
 
-#define NOINSTRUMENT_ATTR "hcos_noinstrument"
-
 /* Print some potentially useful info when verbose is true.  When
    DEBUG is off, use the verbose=true option in the plugin args to
    turn verbose mode on. */
@@ -71,16 +69,16 @@ static int verbose = false;
 static int verbose = true;
 #endif
 
-/* Default config file */
-static const char *config_file_name = "entryexit-trace.config";
+static char *entry_hook_name = "__scorep_entry";
+static char *exit_hook_name = "__scorep_exit";
+static char *token_var_name = "__scorep_token";
+static char attribute_name[32] = "scorep_noinstrument";
+static int token_size = 64;
+static int token_unsigned = 1;
 
-typedef char *func_name;
-DEF_VEC_P(func_name);
-DEF_VEC_ALLOC_P(func_name, heap);
-static VEC(func_name, heap) *func_name_vec;
-
-static char *entry_hook_name = NULL;
-static char *exit_hook_name = NULL;
+static GTY(()) tree token_type;
+static GTY(()) tree entry_hook_decl;
+static GTY(()) tree exit_hook_decl;
 
 static tree build_string_ptr(const char* string)
 {
@@ -111,183 +109,107 @@ static tree build_string_ptr(const char* string)
 
 static void insert_entryexit_hooks(const char *function_name)
 {
-  tree hook_type;
-  tree entry_hook_decl;
-  tree exit_hook_decl;
-
-  basic_block bb;
-  edge in_edge;
-  gimple_stmt_iterator gsi;
-  gimple stmt;
 
   if (verbose)
     fprintf(stderr, "Entry/Exit Trace: Adding entry and exit hooks to %s\n", function_name);
 
-  /* Build the necessary types/decls. */
-  hook_type = build_function_type_list(void_type_node,
-				       build_pointer_type(char_type_node), /* Func name */
-				       build_pointer_type(char_type_node), /*File name*/
-				       integer_type_node, /* Line number */
-				       NULL_TREE);
-  entry_hook_decl = build_fn_decl(entry_hook_name, hook_type);
-  exit_hook_decl = build_fn_decl(exit_hook_name, hook_type);
+  tree token_var = build_decl(UNKNOWN_LOCATION,
+			      VAR_DECL,
+			      get_identifier(token_var_name),
+			      token_type);
+  TREE_STATIC(token_var) = 1;
+  TREE_PUBLIC(token_var) = 0;
+  DECL_ARTIFICIAL(token_var) = 1;
+  DECL_INITIAL(token_var) = build_int_cst(token_type, 0);
+  DECL_IGNORED_P(token_var) = 1;
+  DECL_CONTEXT(token_var) = current_function_decl;
+  varpool_finalize_decl(token_var);
 
   /* Insert the entry hook. */
-  in_edge = single_succ_edge(ENTRY_BLOCK_PTR_FOR_FUNCTION(cfun));
-  gimple hook_call = gimple_build_call(entry_hook_decl, 3,
+  edge in_edge = single_succ_edge(ENTRY_BLOCK_PTR_FOR_FUNCTION(cfun));
+
+  int end_lno = 0;
+  if (cfun->function_end_locus != UNKNOWN_LOCATION)
+    end_lno = LOCATION_LINE(cfun->function_end_locus);
+
+  gimple hook_call = gimple_build_call(entry_hook_decl, 5,
+				       token_var,
 				       build_string_ptr(function_name),
 				       build_string_ptr(input_filename),
-				       build_int_cst(integer_type_node, input_line));
+				       build_int_cst(integer_type_node, input_line),
+				       build_int_cst(integer_type_node, end_lno));
+  gimple_call_set_lhs(hook_call, token_var);
+
   gsi_insert_on_edge_immediate(in_edge, hook_call);
 
+  basic_block bb;
   FOR_EACH_BB(bb)
     {
-      for (gsi = gsi_start_bb(bb) ; !gsi_end_p(gsi) ; gsi_next(&gsi)) 
+      gimple_stmt_iterator gsi;
+      for (gsi = gsi_start_bb(bb) ; !gsi_end_p(gsi) ; gsi_next(&gsi))
 	{
-	  stmt = gsi_stmt(gsi);
-	  if (gimple_has_location(stmt))
-	    input_location = gimple_location(stmt);
+	  gimple stmt = gsi_stmt(gsi);
 
 	  if (gimple_code(stmt) == GIMPLE_RETURN)
 	    {
-	      gimple hook_call = gimple_build_call(exit_hook_decl, 3,
-						   build_string_ptr(function_name),
-						   build_string_ptr(input_filename),
-						   build_int_cst(integer_type_node, input_line));
+	      int lno = 0;
+	      if (gimple_has_location(stmt))
+		lno = LOCATION_LINE(gimple_location(stmt));
+	      hook_call = gimple_build_call(exit_hook_decl, 1, token_var);
 	      gsi_insert_before(&gsi, hook_call, GSI_SAME_STMT);
 	    }
 	}
     }
 }
 
-/* Return true if the given function name should get entry and exit
-   hooks (based on the user's list). */
-static bool check_func(const char *function_name)
-{
-  int i;
-  char *check_name;
-  for (i = 0 ; VEC_iterate(func_name, func_name_vec, i, check_name) ; i++)
-    if (strcmp(function_name, check_name) == 0)
-      return true;
-
-  return false;
-}
-
 static unsigned int transform_gimple()
 {
   const char *function_name;
+
+  if (!token_type)
+    {
+      tree func_type;
+
+      if (verbose)
+        fprintf(stderr, "Entry/Exit Trace: Build types and function decls\n");
+
+      /* Build the necessary types/decls. */
+      token_type = lang_hooks.types.type_for_size(token_size, token_unsigned);
+
+      func_type = build_function_type_list(token_type,
+					   token_type,
+					   /* Func name */
+					   build_pointer_type(char_type_node),
+					   /* File name */
+					   build_pointer_type(char_type_node),
+					   /* Begin line number */
+					   integer_type_node,
+					   /* End line number */
+					   integer_type_node,
+					   NULL_TREE);
+      entry_hook_decl = build_fn_decl(entry_hook_name, func_type);
+      TREE_PUBLIC(entry_hook_decl) = 1;
+
+      func_type = build_function_type_list(void_type_node,
+					   token_type,
+					   NULL_TREE);
+      exit_hook_decl = build_fn_decl(exit_hook_name, func_type);
+      TREE_PUBLIC(exit_hook_decl) = 1;
+    }
+
   function_name = IDENTIFIER_POINTER(DECL_NAME(current_function_decl));
 
-  if (lookup_attribute(NOINSTRUMENT_ATTR, DECL_ATTRIBUTES(cfun->decl)) != NULL)
+  if (lookup_attribute(attribute_name, DECL_ATTRIBUTES(cfun->decl)) != NULL)
     {
       if (verbose)
-	fprintf(stderr, "(Entry/Exit Trace) Function %s marked as noinstrument.  Skipping.\n",
-		function_name);
+	fprintf(stderr, "Entry/Exit Trace: Skipping function %s marked as with '%s'.\n",
+		function_name, attribute_name);
       return 0;
     }
 
-
-  if (check_func(function_name))
-    {
-      insert_entryexit_hooks(function_name);
-    }
+  insert_entryexit_hooks(function_name);
 
   return 0;
-}
-
-static void handle_config_pair(const char *key, const char *value)
-{
-  if (strcmp(key, "func") == 0)
-    {
-      if (verbose)
-	fprintf(stderr, "(Entry/Exit Trace) Found config entry for function: %s.\n", value);
-
-      VEC_safe_push(func_name, heap, func_name_vec, xstrdup(value));
-    }
-  else if (strcmp(key, "entry-hook") == 0)
-    {
-      if (entry_hook_name != NULL)
-	error("Entry/Exit Trace: Plug-in options specify more than one entry hook name");
-
-      entry_hook_name = xstrdup(value);
-    }
-  else if (strcmp(key, "exit-hook") == 0)
-    {
-      if (exit_hook_name != NULL)
-	error("Entry/Exit Trace: Plug-in options specify more than one exit hook name");
-
-      exit_hook_name = xstrdup(value);
-    }
-  else if (strcmp(key, "verbose") == 0)
-    {
-      verbose = true;
-      fprintf(stderr, "Entry/Exit Trace plug-in running in verbose mode.\n");
-    }
-  else
-    {
-      error("Invalid key '%s' in Entry/Exit Trace configuration", key);
-    }
-}
-
-static void read_config_file(const char *filename)
-{
-  int config_lineno = 0;
-  char line[1024];
-  FILE *file = fopen(filename, "r");
-
-  if (file == NULL)
-    goto out_file_err;
-
-  while (fgets(line, sizeof(line), file) != NULL)
-    {
-      char *key_start;
-      char *val_start;
-      char *newline_pos;
-
-      config_lineno++;
-
-      /* Chomp the newline. */
-      newline_pos = strchr(line, '\r');
-      if (newline_pos == NULL)
-	newline_pos = strchr(line, '\n');
-      if (newline_pos != NULL)
-	*newline_pos = '\0';
-
-      /* Start with the first non-whitespace character. */
-      for (key_start = line ; ISSPACE(*key_start) ; key_start++)
-	;
-
-      /* Ignore # lines (comments) and blank lines. */
-      if (*key_start == '#' || *key_start == '\0')
-	continue;
-
-      val_start = strchr(key_start, '=');
-      if (val_start == NULL)
-	goto out_parse_err;
-
-      *val_start = '\0';
-      val_start++;
-
-      handle_config_pair(key_start, val_start);
-    }
-
-  /* Did we exit because of EOF or because of an I/O error? */
-  if (!feof(file))
-    goto out_file_err;
-
-  fclose(file);
-  return;
-
- out_file_err:
-  if (file != NULL)
-    fclose(file);
-  error("(Entry/Exit Trace) Failed to read config file %s: %s", filename, strerror(errno));
-  return;
-
- out_parse_err:
-  fclose(file);
-  error("(Entry/Exit Trace) Parse error in config file %s:%d", filename, config_lineno);
-  return;
 }
 
 /* Some attributes (mainly noinstrument) are shared by several
@@ -306,7 +228,7 @@ void register_attribute_once(const struct attribute_spec *attr)
     {
       /* This attribute was already registered. */
       if (verbose)
-	fprintf(stderr, "(Field Trace) Ignoring duplicate registration of attribute %s.\n",
+	fprintf(stderr, "Entry/Exit Trace: Ignoring duplicate registration of attribute %s.\n",
 		attr->name);
     }
 }
@@ -317,7 +239,7 @@ static tree null_attrib_handler(tree *node, tree name, tree args, int flags, boo
 }
 
 static struct attribute_spec noinstr_attr = {
-  .name = NOINSTRUMENT_ATTR,
+  .name = attribute_name,
   .min_length = 0,
   .max_length = 0,
   .decl_required = false,
@@ -335,21 +257,18 @@ static void register_plugin_attributes(void *event_data, void *data)
    all the memory we allocated. */
 static void cleanup(void *event_date, void *data)
 {
-  int i;
-  char *name_iter;
+}
 
-  free(entry_hook_name);
-  free(exit_hook_name);
-
-  /* Clear out the lock_owner_vec list. */
-  for (i = 0 ; VEC_iterate(func_name, func_name_vec, i, name_iter) ; i++)
-    free(name_iter);
-  VEC_free(func_name, heap, func_name_vec);
+static void
+pre_genericize(void *fndecl_tree, void *data)
+{
+  tree fndecl = fndecl_tree;
+  DECL_NO_INSTRUMENT_FUNCTION_ENTRY_EXIT(fndecl) = 1;
 }
 
 static struct opt_pass pass_instrument_field_refs = {
   .type = GIMPLE_PASS,
-  .name = "instr_entryexit",
+  .name = "scorep_instrument",
   .gate = NULL,
   .execute = transform_gimple,
   .sub = NULL,
@@ -360,7 +279,7 @@ static struct opt_pass pass_instrument_field_refs = {
   .properties_provided = 0,
   .properties_destroyed = 0,
   .todo_flags_start = 0,
-  .todo_flags_finish = TODO_update_ssa,
+  .todo_flags_finish = TODO_dump_func | TODO_update_ssa,
 };
 
 static struct register_pass_info pass_info = {
@@ -377,8 +296,6 @@ int plugin_init(struct plugin_name_args *plugin_info, struct plugin_gcc_version 
   struct plugin_argument *argv = plugin_info->argv;
   int i;
 
-  func_name_vec = VEC_alloc(func_name, heap, 10);
-
 #ifdef DEBUG
   fprintf(stderr, "Initializing Entry/Exit Trace plugin.\n");
 #endif
@@ -392,17 +309,9 @@ int plugin_init(struct plugin_name_args *plugin_info, struct plugin_gcc_version 
   /* Parse plugin arguments. */
   for (i = 0 ; i < argc ; i++)
     {
-      if (strcmp(argv[i].key, "config") == 0)
-	{
-	  if (argv[i].value != NULL)
-	    config_file_name = argv[i].value;
-	  else
-	    error("(Entry/Exit Trace) Must specify filename for -fplugin-arg-%s-config", plugin_name);
-	}
-      else if (strcmp(argv[i].key, "verbose") == 0)
+      if (strcmp(argv[i].key, "verbose") == 0)
 	{
 	  verbose = true;
-	  fprintf(stderr, "Entry/Exit Trace plugin running in verbose mode.\n");
 	}
       else
 	{
@@ -411,17 +320,17 @@ int plugin_init(struct plugin_name_args *plugin_info, struct plugin_gcc_version 
 	}
     }
 
-  read_config_file(config_file_name);
-  if (entry_hook_name == NULL)
-    error("Entry/Exit Trace: Configuration does not specify an entry hook name");
-  if (exit_hook_name == NULL)
-    error("Entry/Exit Trace: Configuration does not specify an exit hook name");
+  if (verbose)
+    fprintf(stderr, "Entry/Exit Trace plugin running in verbose mode.\n");
 
   /* Set up a callback to register our attributes. */
   register_callback(plugin_name, PLUGIN_ATTRIBUTES, register_plugin_attributes, NULL);
 
   /* Register the main GIMPLE pass, which performs the actual instrumentation. */
   register_callback(plugin_name, PLUGIN_PASS_MANAGER_SETUP, NULL, &pass_info);
+
+  /* Register the main GIMPLE pass, which performs the actual instrumentation. */
+  register_callback(plugin_name, PLUGIN_PRE_GENERICIZE, pre_genericize, NULL);
 
   /* Register our cleanup function. */
   register_callback(plugin_name, PLUGIN_FINISH, cleanup, NULL);

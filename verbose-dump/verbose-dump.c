@@ -94,7 +94,7 @@ static struct
 {
   .depth	= 0,
   .c_tree	= 0,
-  .pass_list	= 0,
+  .pass_list	= 1,
   .out_fp	= NULL
 };
 
@@ -1318,7 +1318,7 @@ int plugin_init(struct plugin_name_args *plugin_info, struct plugin_gcc_version 
   pre_translation_unit(plugin_info->argc, plugin_info->argv);
 
   /* Register the Verbose Dump GIMPLE pass. */
-  register_callback(plugin_info->base_name, PLUGIN_PASS_MANAGER_SETUP, NULL, &pass_info);
+  //register_callback(plugin_info->base_name, PLUGIN_PASS_MANAGER_SETUP, NULL, &pass_info);
 
   /* Register the cleanup code. */
   register_callback(plugin_info->base_name, PLUGIN_FINISH, post_translation_unit, NULL);
