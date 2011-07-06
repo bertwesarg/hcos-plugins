@@ -31,6 +31,8 @@
 #include <locale.h>
 
 #include "config.h"
+#include "libiberty.h"
+#include "filenames.h"
 #include "system.h"
 #include "coretypes.h"
 #include "tm.h"
@@ -56,6 +58,8 @@
 
 /* GCC only allows plug-ins that include this symbol. */
 int plugin_is_GPL_compatible;
+
+static const char dir_separator_str[] = { DIR_SEPARATOR, 0 };
 
 //#define DEBUG
 //#define PAUSE_ON_START
@@ -109,6 +113,13 @@ static tree build_string_ptr(const char* string)
 
 static void insert_entryexit_hooks(const char *function_name)
 {
+  char *tmp_full_path;
+  if (!IS_ABSOLUTE_PATH(input_filename))
+    tmp_full_path = concat(getpwd(), dir_separator_str, input_filename, NULL);
+  else
+    tmp_full_path = xstrdup(input_filename);
+  char *full_path = lrealpath(tmp_full_path);
+  free(tmp_full_path);
 
   if (verbose)
     fprintf(stderr, "Entry/Exit Trace: Adding entry and exit hooks to %s\n", function_name);
@@ -135,7 +146,7 @@ static void insert_entryexit_hooks(const char *function_name)
   gimple hook_call = gimple_build_call(entry_hook_decl, 5,
 				       token_var,
 				       build_string_ptr(function_name),
-				       build_string_ptr(input_filename),
+				       build_string_ptr(full_path),
 				       build_int_cst(integer_type_node, input_line),
 				       build_int_cst(integer_type_node, end_lno));
   gimple_call_set_lhs(hook_call, token_var);
@@ -160,6 +171,7 @@ static void insert_entryexit_hooks(const char *function_name)
 	    }
 	}
     }
+  free(full_path);
 }
 
 static unsigned int transform_gimple()
