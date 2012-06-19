@@ -113,6 +113,7 @@ static tree build_string_ptr(const char* string)
 
 static void insert_entryexit_hooks(const char *function_name)
 {
+/*
   char *tmp_full_path;
   if (!IS_ABSOLUTE_PATH(input_filename))
     tmp_full_path = concat(getpwd(), dir_separator_str, input_filename, NULL);
@@ -120,6 +121,14 @@ static void insert_entryexit_hooks(const char *function_name)
     tmp_full_path = xstrdup(input_filename);
   char *full_path = lrealpath(tmp_full_path);
   free(tmp_full_path);
+*/
+  char *full_path = "<foo.c>";
+
+  if (!cfun)
+    {
+      fprintf(stderr, "Entry/Exit Trace: No cfun\n");
+      return;
+    }
 
   if (verbose)
     fprintf(stderr, "Entry/Exit Trace: Adding entry and exit hooks to %s\n", function_name);
@@ -135,12 +144,13 @@ static void insert_entryexit_hooks(const char *function_name)
   DECL_IGNORED_P(token_var) = 1;
   DECL_CONTEXT(token_var) = current_function_decl;
   varpool_finalize_decl(token_var);
+puts(__func__);
 
   /* Insert the entry hook. */
   edge in_edge = single_succ_edge(ENTRY_BLOCK_PTR_FOR_FUNCTION(cfun));
 
   int end_lno = 0;
-  if (cfun->function_end_locus != UNKNOWN_LOCATION)
+  if (cfun && cfun->function_end_locus != UNKNOWN_LOCATION)
     end_lno = LOCATION_LINE(cfun->function_end_locus);
 
   gimple hook_call = gimple_build_call(entry_hook_decl, 5,
@@ -171,7 +181,7 @@ static void insert_entryexit_hooks(const char *function_name)
 	    }
 	}
     }
-  free(full_path);
+  //free(full_path);
 }
 
 static unsigned int transform_gimple()
@@ -278,6 +288,19 @@ pre_genericize(void *fndecl_tree, void *data)
   DECL_NO_INSTRUMENT_FUNCTION_ENTRY_EXIT(fndecl) = 1;
 }
 
+static void
+pass_execution(void *opt_pass, void *user_data)
+{
+    struct opt_pass *pass = opt_pass;
+
+    char *fname = "<unknown>";
+    if (current_function_decl)
+        fname = IDENTIFIER_POINTER(DECL_NAME(current_function_decl));
+
+    if (pass)
+        printf("%s on '%s'\n", pass->name, fname);
+}
+
 static struct opt_pass pass_instrument_field_refs = {
   .type = GIMPLE_PASS,
   .name = "scorep_instrument",
@@ -287,18 +310,19 @@ static struct opt_pass pass_instrument_field_refs = {
   .next = NULL,
   .static_pass_number = 0,
   .tv_id = 0,
-  .properties_required = 0,
+  .properties_required = PROP_cfg,
   .properties_provided = 0,
-  .properties_destroyed = 0,
-  .todo_flags_start = 0,
-  .todo_flags_finish = TODO_dump_func | TODO_update_ssa,
+  .properties_destroyed = PROP_ssa | PROP_cfg,
+  .todo_flags_start = TODO_dump_func,
+  .todo_flags_finish = TODO_dump_func | TODO_update_ssa_any,
 };
 
 static struct register_pass_info pass_info = {
   .pass = &pass_instrument_field_refs,
+  /* .reference_pass_name = "cfg", */
   .reference_pass_name = "*all_optimizations",
   .ref_pass_instance_number = 0,
-  .pos_op = PASS_POS_INSERT_BEFORE,
+  .pos_op = PASS_POS_INSERT_AFTER,
 };
 
 int plugin_init(struct plugin_name_args *plugin_info, struct plugin_gcc_version *version)
@@ -340,6 +364,8 @@ int plugin_init(struct plugin_name_args *plugin_info, struct plugin_gcc_version 
 
   /* Register the main GIMPLE pass, which performs the actual instrumentation. */
   register_callback(plugin_name, PLUGIN_PASS_MANAGER_SETUP, NULL, &pass_info);
+
+  register_callback(plugin_name, PLUGIN_PASS_EXECUTION, pass_execution, NULL);
 
   /* Register the main GIMPLE pass, which performs the actual instrumentation. */
   register_callback(plugin_name, PLUGIN_PRE_GENERICIZE, pre_genericize, NULL);
